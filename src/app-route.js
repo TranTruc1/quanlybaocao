@@ -4,8 +4,9 @@ const id=value=>typeof value==='string'&&value.length<=160&&/^[A-Za-z0-9_-]+$/.t
 const date=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'')&&Number.isFinite(Date.parse(value+'T12:00:00Z'))&&new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value?value:null;
 export function parseAppRoute(hash=''){
  const [path,query='']=hash.replace(/^#/, '').split('?');
- const parts=path.replace(/^\//,'').replace(/\/$/,'').split('/'),area=['user','admin'].includes(parts[0])?parts.shift():null;
+ const parts=path.replace(/^\//,'').replace(/\/$/,'').split('/'),area=['user','admin','sale'].includes(parts[0])?parts.shift():null;
  const page=pages[parts.join('/')]||'overview',params=new URLSearchParams(query),base=area?{page,area}:{page};
+ if(page==='overview'&&params.get('team')==='sale')base.team='sale';
  if(page==='daily'){
   const report={id:id(params.get('report')),accountId:id(params.get('account')),date:date(params.get('date'))};
   return {...base,report:report.id||report.accountId||report.date?report:null};
@@ -20,8 +21,9 @@ export function appRouteHash(route){
   if(id(r.accountId))params.set('account',r.accountId);
   if(date(r.date))params.set('date',r.date);
  }else if(page==='overview'){
+  if(route.team==='sale')params.set('team','sale');
   if(id(route.employee))params.set('employee',route.employee);
   if(id(route.day))params.set('day',route.day);
  }
- return '#/'+(['user','admin'].includes(route?.area)?route.area+'/':'')+paths[page]+(params.size?'?'+params:'');
+ return '#/'+(['user','admin','sale'].includes(route?.area)?route.area+'/':'')+paths[page]+(params.size?'?'+params:'');
 }
