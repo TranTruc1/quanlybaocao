@@ -1,0 +1,8 @@
+Chep de file vao dung thu muc du an. Khong thay doi public/config.js.
+Mat khau toi thieu 6, toi da 20 ky tu. F5 giu phien; token khong hop le moi tu dang xuat.
+1. npm test
+2. npm run build
+3. git add .
+4. git commit -m "Giu phien F5 va gioi han mat khau 6-20 ky tu"
+5. git push origin main
+6. Dan backend/Code.gs vao Apps Script > Trien khai > Quan ly cac ban trien khai > Sua > Phien ban moi > Trien khai. Giu URL /exec hien tai.

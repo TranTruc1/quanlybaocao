@@ -4,6 +4,12 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 const code=fs.readFileSync(new URL('../backend/Code.gs',import.meta.url),'utf8');
+test('New and edited account passwords accept 6–20 characters and reject outside bounds',()=>{
+ const {c}=runtime(),base={ownerName:'Test',username:'test'};
+ for(const length of [6,20])assert.doesNotThrow(()=>c.checkAccount_({...base,password:'x'.repeat(length)},true));
+ for(const length of [5,21])assert.throws(()=>c.checkAccount_({...base,password:'x'.repeat(length)},true));
+ assert.doesNotThrow(()=>c.checkAccount_({...base,password:''},false));
+});
 function runtime(){
  const fault={table:null},reads=new Map(),sheets=new Map(),props=new Map([['SL_SPREADSHEET_ID','test']]),cache=new Map();
  function sheet(name){if(!sheets.has(name))sheets.set(name,[['id','json']]);const data=sheets.get(name);return {getLastRow:()=>data.length,getRange:(r,c,n=1,m=1)=>({getValues:()=>{reads.set(name,(reads.get(name)||0)+1);return Array.from({length:n},(_,i)=>Array.from({length:m},(_,j)=>data[r-1+i]?.[c-1+j]??''));},setValues:values=>{if(fault.table===name){fault.table=null;throw Error('simulated Google service failure');}values.forEach((row,i)=>{data[r-1+i]??=[];row.forEach((v,j)=>data[r-1+i][c-1+j]=v);});}}),deleteRow:r=>data.splice(r-1,1)};}
@@ -188,7 +194,7 @@ test('Financial overflow, excessively long password and forged ownership are rej
 });
 
 test('Legacy credentials migrate to a server-only pepper without changing the password',()=>{
- const {post,c,put}=runtime(),password='preserve-old-password',salt='old-salt';const legacy=c.pbkdf_(password,salt,2);put('Accounts',{id:'a',username:'linh',ownerName:'Linh',role:'user',active:true,salt,iterations:2,passwordHash:legacy});
+ const {post,c,put}=runtime(),password='keep-old-password',salt='old-salt';const legacy=c.pbkdf_(password,salt,2);put('Accounts',{id:'a',username:'linh',ownerName:'Linh',role:'user',active:true,salt,iterations:2,passwordHash:legacy});
  assert.equal(post('login',{username:'linh',password}).ok,true);const stored=c.get_('Accounts','a');assert.equal(stored.pepperVersion,1);assert.notEqual(stored.passwordHash,legacy);
  assert.equal(post('login',{username:'linh',password}).ok,true);assert.equal(post('login',{username:'linh',password:'wrong'}).ok,false);assert.equal(post('bootstrap').data.accounts[0].pepperVersion,undefined);
 });

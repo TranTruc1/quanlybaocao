@@ -22,7 +22,7 @@ function createInitialAdmin() {
   if(read_('Accounts').some(function(a){return a.role==='admin';})) throw applicationError_('Đã có admin. Không thể khởi tạo lại.');
   var n=ui.prompt('Tên chủ sở hữu', 'Nhập tên admin', ui.ButtonSet.OK_CANCEL);if(n.getSelectedButton()!==ui.Button.OK)return;
   var u=ui.prompt('Tên đăng nhập admin', 'Chữ, số, dấu . _ -', ui.ButtonSet.OK_CANCEL);if(u.getSelectedButton()!==ui.Button.OK)return;
-  var p=ui.prompt('Mật khẩu admin', 'Tối thiểu 10 ký tự; không ghi mật khẩu vào mã nguồn.', ui.ButtonSet.OK_CANCEL);if(p.getSelectedButton()!==ui.Button.OK)return;
+  var p=ui.prompt('Mật khẩu admin', 'Từ 6 đến 20 ký tự; không ghi mật khẩu vào mã nguồn.', ui.ButtonSet.OK_CANCEL);if(p.getSelectedButton()!==ui.Button.OK)return;
   var username=u.getResponseText().trim(),owner=n.getResponseText().trim(),password=p.getResponseText();
   checkAccount_({username:username,ownerName:owner,password:password},true);
   var lock=LockService.getScriptLock();lock.waitLock(30000);
@@ -175,7 +175,7 @@ function applicationError_(message){return Object.assign(new Error(message),{cod
 function conflict_(){return Object.assign(new Error('Dữ liệu vừa được người khác cập nhật. Tải lại trước khi sửa.'),{code:'CONFLICT'});}
 
 function login_(p,v2){
-  var username=String(p.username||'').trim().toLowerCase(),password=String(p.password||'');if(username.length>100||password.length>200)throw applicationError_('Thông tin đăng nhập không hợp lệ.');
+  var username=String(p.username||'').trim().toLowerCase(),password=String(p.password||'');if(username.length>100||password.length<6||password.length>20)throw applicationError_('Thông tin đăng nhập không hợp lệ.');
   var cache=CacheService.getScriptCache(),key='login:'+sha_(username),attempts=Number(cache.get(key)||0);if(attempts>=6)throw applicationError_('Đăng nhập sai nhiều lần. Thử lại sau 15 phút.');
   cache.put(key,String(attempts+1),900);
   var a=read_('Accounts').find(function(x){return x.username.toLowerCase()===username&&x.active;});
@@ -189,7 +189,7 @@ function publicAccount_(a){return {id:a.id,username:a.username,ownerName:a.owner
 function owner_(requested,user){if(user.role==='admin'){if(!requested)throw applicationError_('Chọn account.');return requested;}if(requested&&requested!==user.id)throw applicationError_('Không có quyền truy cập account khác.');return user.id;}
 function admin_(u){if(u.role!=='admin')throw applicationError_('Chỉ admin có quyền thực hiện.');}
 function checkProduct_(accountId,productId){var p=get_('Products',productId);if(!p||!p.active||!read_('Assignments').some(function(a){return a.accountId===accountId&&a.productId===productId&&a.active;}))throw applicationError_('Sản phẩm chưa được phân phối cho account hoặc đã ngừng dùng.');}
-function checkAccount_(p,needsPassword){if(String(p.password||'').length>200)throw applicationError_('Mật khẩu tối đa 200 ký tự.');if(!String(p.ownerName||'').trim()||String(p.ownerName).length>100||! /^[a-zA-Z0-9_.-]{2,60}$/.test(String(p.username||'').trim()))throw applicationError_('Kiểm tra tên chủ sở hữu và tên đăng nhập (2–60 ký tự).');if((needsPassword||p.password)&&String(p.password||'').length<10)throw applicationError_('Mật khẩu cần ít nhất 10 ký tự.');}
+function checkAccount_(p,needsPassword){if(String(p.password||'').length>20)throw applicationError_('Mật khẩu tối đa 20 ký tự.');if(!String(p.ownerName||'').trim()||String(p.ownerName).length>100||! /^[a-zA-Z0-9_.-]{2,60}$/.test(String(p.username||'').trim()))throw applicationError_('Kiểm tra tên chủ sở hữu và tên đăng nhập (2–60 ký tự).');if((needsPassword||p.password)&&String(p.password||'').length<6)throw applicationError_('Mật khẩu cần ít nhất 6 ký tự.');}
 function num_(v,int){var n=Number(v);if(!Number.isFinite(n)||n<0||n>1e13||(int&&!Number.isInteger(n)))throw applicationError_('Số liệu phải không âm; số đếm phải là số nguyên.');return n;}
 function date_(v){if(!/^\d{4}-\d{2}-\d{2}$/.test(v)||new Date(v+'T00:00:00Z').toISOString().slice(0,10)!==v)throw applicationError_('Ngày không hợp lệ.');}
 function sheet_(name){if(TABLES_.indexOf(name)<0)throw applicationError_('Bảng không hợp lệ.');var id=PropertiesService.getScriptProperties().getProperty('SL_SPREADSHEET_ID');if(!id)throw applicationError_('Chạy setup() trong Apps Script trước.');var s=SpreadsheetApp.openById(id).getSheetByName('SL_'+name);if(!s)throw applicationError_('Thiếu bảng SL_'+name+'. Chạy setup().');return s;}

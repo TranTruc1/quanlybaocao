@@ -52,7 +52,7 @@ Nếu không dùng biến môi trường, bạn vẫn có thể sửa `public/co
 
 ## 4. Kiểm tra sau triển khai bằng dữ liệu thử
 
-- Admin và user đăng nhập bằng tài khoản thật; F5 trở về màn đăng nhập theo yêu cầu.
+- Admin và user đăng nhập bằng tài khoản thật; F5 giữ phiên; token sai/hết hạn mới tự đăng xuất.
 - User chỉ nhận sản phẩm được giao và dữ liệu của mình. Thử sửa role local: UI có thể đổi nhưng request vượt quyền bị từ chối, hiện modal và đăng xuất.
 - Chọn ngày/tháng khác, xem trạng thái tải; tổng khớp Sheet.
 - Tạo báo cáo và vài đơn sale/chăm/upsale/chia/bùng. Sửa rồi tải lại kiểm tra số liệu.

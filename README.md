@@ -67,7 +67,7 @@ Mỗi sheet dưới đây có **hai cột `id`, `json`**. API quản lý ID và 
 ## Luồng dữ liệu và bảo mật
 
 - Đăng nhập trả dữ liệu ban đầu trong cùng request. Đổi menu không gọi bước xác minh riêng. Mỗi request dữ liệu gửi token, máy chủ đọc quyền hiện tại.
-- Token giữ trong bộ nhớ trang; F5/tải lại/đóng trang phải đăng nhập lại. Role hiển thị cục bộ không cấp quyền máy chủ. Lỗi thiếu quyền/hết phiên hiện modal và đăng xuất; lỗi nhập liệu hoặc mạng không đăng xuất.
+- Token giữ trong sessionStorage của tab; F5/tải lại vẫn giữ phiên và tải lại dữ liệu qua backend. Role hiển thị cục bộ không cấp quyền máy chủ. Chỉ token sai/hết hạn hoặc tài khoản không còn hoạt động mới tự đăng xuất. Thiếu quyền hiện modal và giữ phiên; lỗi nhập liệu hoặc mạng cho phép thử lại.
 - Snapshot chỉ gửi báo cáo/đơn/mục tiêu theo kỳ, kèm ngữ cảnh số dư trước kỳ. Khoảng xem tối đa 367 ngày mỗi lần. Lịch sử sửa tải khi mở và có Tải thêm.
 - Lưu trả delta các bản ghi thay đổi. Request ID và ID nghiệp vụ ổn định hỗ trợ retry không tạo trùng. Không đổi dữ liệu hay F5 khi chưa biết một lần lưu đã thành công hay chưa; kiểm tra lại danh sách nếu có lỗi kéo dài.
 - Apps Script memo dữ liệu trong từng request, kiểm tra trước khi ghi, gom dòng liền nhau và dùng ScriptLock. Không cache quyền giữa các request.
