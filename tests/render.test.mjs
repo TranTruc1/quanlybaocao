@@ -7,7 +7,7 @@ import {renderToString} from 'react-dom/server';
 import {fixtureDb} from './fixtures.js';
 import {previousDay} from '../src/domain.js';
 const storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};globalThis.window={APP_CONFIG:{}};
-const source=(await fs.readFile(new URL('../src/main.jsx',import.meta.url),'utf8')).replace(/createRoot\(document\.getElementById\('root'\)\)\.render\([^\n]+\);/, '')+'\nexport {Overview,Daily,Orders,Targets,Products,Accounts,Login};';
+const source=(await fs.readFile(new URL('../src/main.jsx',import.meta.url),'utf8')).replace(/createRoot\(document\.getElementById\('root'\)\)\.render\([^\n]+\);/, '')+'\nexport {App,Overview,Daily,Orders,Targets,Products,Accounts,Login};';
 const path=new URL('../.review-render-main.mjs',import.meta.url);
 await build({stdin:{contents:source,loader:'jsx',resolveDir:new URL('../src',import.meta.url).pathname},bundle:true,format:'esm',platform:'node',outfile:path.pathname,external:['react','react-dom/*','lucide-react'],loader:{'.css':'empty'}});
 const ui=await import(path.href);await fs.unlink(path);
@@ -17,3 +17,11 @@ test('Admin defaults to yesterday and order filters expose care/account controls
 test('Charts stay hidden behind their open button',()=>{const overview=renderToString(React.createElement(ui.Overview,{...base,user:admin}));assert.ok(overview.includes('Xem biểu đồ'));assert.equal(overview.includes('Biểu đồ tổng quan'),false);});
 
 test('Login has only username/password, reports missing API and never offers account selection',()=>{const html=renderToString(React.createElement(ui.Login,{onLogin(){}}));assert.ok(html.includes('Tên đăng nhập'));assert.ok(html.includes('Mật khẩu'));assert.ok(html.includes('Chưa cấu hình'));assert.equal(html.includes('Account trải nghiệm'),false);assert.equal(html.includes('<select'),false);});
+
+test('Reload shows the workspace shell with placeholders, not a verification wall or cached business data',()=>{
+ const tab=new Map([['so-lieu.session',JSON.stringify({token:'reload-token',user:{id:'reload-user'}})]]);
+ globalThis.sessionStorage={getItem:k=>tab.get(k)||null,removeItem:k=>tab.delete(k)};
+ storage.set('so-lieu.ui-user',JSON.stringify({id:'reload-user',ownerName:'Trúc',role:'user'}));
+ try{const html=renderToString(React.createElement(ui.App));assert.ok(html.includes('sidebar'));assert.ok(html.includes('Trúc'));assert.ok(html.includes('workspace-skeleton'));assert.equal(html.includes('Đang xác minh'),false);assert.equal(html.includes('Đăng nhập</h2>'),false);assert.equal(html.includes('Tổng ngân sách'),false);}
+ finally{delete globalThis.sessionStorage;storage.clear();}
+});
