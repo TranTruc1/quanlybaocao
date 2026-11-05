@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env*
+*.zip
+!.env.example
+.vercel/
+coverage/
+*.log
+.review-render-*.mjs
