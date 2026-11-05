@@ -73,6 +73,7 @@ function mutate_(action,p,user){
     if(!['draft','submitted'].includes(p.status)||!Array.isArray(p.entries)||p.entries.length<1||p.entries.length>100)throw applicationError_('Bảng nhập không hợp lệ.');
     var old=read_('Reports').find(function(r){return r.accountId===accountId&&r.date===p.date;});
     if(user.role==='admin'&&!old)throw applicationError_('Admin chỉ xem và sửa báo cáo đã có.');
+    checkReportSequence_(accountId,p.date,user);
     
     if(old&&old.status==='submitted'&&p.status==='draft')p.status='submitted';
     if(old&&old.revision!==Number(p.revision))throw applicationError_('Bảng đã được cập nhật. Tải lại trước khi sửa.');
@@ -86,12 +87,15 @@ function mutate_(action,p,user){
       clean.upsale=matchingOrders.filter(function(o){return o.type==='upsale';}).reduce(function(n,o){return n+weightOrder_(o);},0);
       if(Object.prototype.hasOwnProperty.call(e,'received')){clean.received=num_(e.received,false);}else if(clean.remaining>clean.budget)throw applicationError_('Thừa cuối ngày không thể vượt ngân sách.');return clean;
     });
+    if(user.role!=='admin'&&old&&old.entries.some(function(e){return !ids[e.productId];}))throw applicationError_('Không được bỏ sản phẩm đã có trong báo cáo. Không phát sinh vẫn giữ dòng số 0.');
+    if(user.role!=='admin'&&p.status==='submitted'&&(!old||(old.status==='draft'&&!old.postedEntries))){var required=read_('Assignments').filter(function(a){return a.accountId===accountId&&a.active&&get_('Products',a.productId)?.active;});if(required.some(function(a){return !ids[a.productId];}))throw applicationError_('Cần điền đủ sản phẩm được giao. Không phát sinh vẫn gửi số 0.');}
     var proposed={id:old?old.id:newId_(),accountId:accountId,date:p.date,status:p.status,entries:entries,revision:(old?old.revision:0)+1,updatedAt:now_(),submittedAt:p.status==='submitted'?(old&&old.submittedAt?old.submittedAt:now_()):(old?old.submittedAt:null),postedEntries:p.status==='draft'&&old?old.postedEntries:null};
     writeReportBudgets_(read_('Reports').filter(function(r){return r.id!==proposed.id;}).concat([proposed]),proposed.id,user);
   } else if(action==='changeReportDate') {
     var report=get_('Reports',p.id);if(!report||(user.role!=='admin'&&report.accountId!==user.id))throw applicationError_('Không có quyền sửa bảng này.');
     date_(p.date);if(report.revision!==Number(p.revision))throw applicationError_('Bảng vừa được cập nhật. Tải lại trước khi sửa.');
     if(read_('Reports').some(function(r){return r.id!==report.id&&r.accountId===report.accountId&&r.date===p.date;}))throw applicationError_('Account đã có bảng ở ngày này. Chọn ngày khác hoặc chỉnh bảng hiện có.');
+    checkReportSequence_(report.accountId,p.date,user,report.id);
     var previousDate=report.date;report.date=p.date;report.revision++;report.updatedAt=now_();writeReportBudgets_(read_('Reports').filter(function(r){return r.id!==report.id;}).concat([report]),report.id,user);audit_(user.id,'reportDateChanged',{id:report.id,from:previousDate,to:p.date});
   } else if(action==='reopen') {
     admin_(user);var r=get_('Reports',p.id);if(!r)throw applicationError_('Không tìm thấy bảng.');var beforeReopen=JSON.parse(JSON.stringify(r));r.postedEntries=JSON.parse(JSON.stringify(r.entries));r.status='draft';r.revision++;r.updatedAt=now_();put_('Reports',r);audit_(user.id,'reportReopened',{reportId:r.id,accountId:r.accountId,before:beforeReopen,after:r});
@@ -258,6 +262,27 @@ function equal_(a,b){if(typeof a!=='string'||typeof b!=='string')return false;va
 
 function careOrder_(o){return o.type==='care'||o.type==='upsale'||o.isCare===true;}
 function weightOrder_(o){return o.isSplit===true?0.5:1;}
+
+// A first report may start on any of the last seven completed days.
+// Existing accounts must submit every day since their start (within that window).
+function reportWindow_(){
+ var today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ var d=new Date(today+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);var to=d.toISOString().slice(0,10);d.setUTCDate(d.getUTCDate()-6);return {from:d.toISOString().slice(0,10),to:to};
+}
+function checkReportSequence_(accountId,date,actor,excludeId){
+ if(actor.role==='admin')return; // Admin can correct historical reports; every change is audited.
+ var window=reportWindow_();
+ if(date<window.from||date>window.to)throw applicationError_('Chỉ nhập và sửa báo cáo từ '+window.from+' đến '+window.to+' (7 ngày gần nhất, tính đến hôm qua).');
+ var own=read_('Reports').filter(function(r){return r.accountId===accountId;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+ if(!own.length)return;
+ var start=own[0].date>window.from?own[0].date:window.from;
+ if(date<start)throw applicationError_('Ngày bắt đầu báo cáo của account là '+start+'. Không thể thêm ngày trước mốc này.');
+ var d=new Date(start+'T12:00:00Z');
+ while(d.toISOString().slice(0,10)<date){var day=d.toISOString().slice(0,10);
+  if(!own.some(function(r){return r.id!==excludeId&&r.date===day&&r.status==='submitted';}))throw applicationError_('Cần gửi báo cáo ngày '+day+' trước khi điền ngày tiếp theo. Không phát sinh vẫn gửi các ô bằng 0; bản nháp chưa được tính.');
+  d.setUTCDate(d.getUTCDate()+1);
+ }
+}
 
 function normalizeReportBudgets_(reports){
  const balances=Object.create(null);

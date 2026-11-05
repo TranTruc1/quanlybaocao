@@ -88,3 +88,11 @@ tests/                  Kiểm thử + fixture chỉ dùng kiểm thử, không 
 ```
 
 Chưa có thao tác push GitHub hay triển khai Vercel vào tài khoản của bạn trong phiên chuẩn bị này. Các giới hạn Sheets/Apps Script và các bước kiểm tra thật trước vận hành nằm trong `DEPLOY_VERCEL.md`.
+
+### Nhập báo cáo tuần tự
+
+- User chỉ nhập/sửa trong 7 ngày gần nhất đến hết hôm qua, theo giờ Việt Nam.
+- Chưa có lịch sử: được chọn ngày đầu ngay trong khoảng này, không phải điền bù trước ngày bắt đầu.
+- Sau mốc đầu: phải gửi từng ngày trước khi nhập ngày sau; bản nháp chưa được tính. Ngày không phát sinh vẫn gửi đủ các ô số 0.
+- Có lịch sử từ trước cửa sổ 7 ngày: bổ sung ngày thiếu từ đầu cửa sổ, không phải bổ sung toàn bộ lịch sử.
+- Admin được sửa báo cáo lịch sử đã có. Sửa số dư sẽ tính lại các báo cáo sau, tăng phiên bản và ghi lịch sử; nếu số dư sau vượt ngân sách thì từ chối lưu, không âm thầm ghi sai.

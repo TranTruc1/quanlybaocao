@@ -10,12 +10,15 @@ test('New and edited account passwords accept 6–20 characters and reject outsi
  for(const length of [5,21])assert.throws(()=>c.checkAccount_({...base,password:'x'.repeat(length)},true));
  assert.doesNotThrow(()=>c.checkAccount_({...base,password:''},false));
 });
-function runtime(){
+function runtime(options={}){
  const fault={table:null},reads=new Map(),sheets=new Map(),props=new Map([['SL_SPREADSHEET_ID','test']]),cache=new Map();
  function sheet(name){if(!sheets.has(name))sheets.set(name,[['id','json']]);const data=sheets.get(name);return {getLastRow:()=>data.length,getRange:(r,c,n=1,m=1)=>({getValues:()=>{reads.set(name,(reads.get(name)||0)+1);return Array.from({length:n},(_,i)=>Array.from({length:m},(_,j)=>data[r-1+i]?.[c-1+j]??''));},setValues:values=>{if(fault.table===name){fault.table=null;throw Error('simulated Google service failure');}values.forEach((row,i)=>{data[r-1+i]??=[];row.forEach((v,j)=>data[r-1+i][c-1+j]=v);});}}),deleteRow:r=>data.splice(r-1,1)};}
  const signed=b=>Array.from(b,x=>x>127?x-256:x);
  const context=vm.createContext({console,Date,JSON,Math,Number,String,Error,Array,Object,RegExp,Utilities:{getUuid:()=>crypto.randomUUID(),newBlob:s=>({getBytes:()=>signed(Buffer.from(s))}),computeHmacSha256Signature:(message,key)=>signed(crypto.createHmac('sha256',Buffer.from(key.map(x=>x&255))).update(Buffer.from(message.map(x=>x&255))).digest()),base64EncodeWebSafe:b=>Buffer.from(b.map(x=>x&255)).toString('base64url')+'=',computeDigest:(_,s)=>signed(crypto.createHash('sha256').update(s).digest()),DigestAlgorithm:{SHA_256:'SHA_256'},Charset:{UTF_8:'utf8'}},SpreadsheetApp:{openById:()=>({getSheetByName:sheet})},PropertiesService:{getScriptProperties:()=>({getProperty:k=>props.get(k),setProperty:(k,v)=>props.set(k,v)})},CacheService:{getScriptCache:()=>({get:k=>cache.get(k),put:(k,v)=>cache.set(k,v),remove:k=>cache.delete(k)})},LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},ContentService:{MimeType:{JSON:'json'},createTextOutput:text=>({setMimeType:()=>text})}});
  vm.runInContext(code,context);context.PBKDF_ITERATIONS_=2;
+ // Freeze the policy window; legacy fixture tests isolate old carryover/migration behavior.
+ context.reportWindow_=()=>({from:'2026-10-29',to:'2026-11-04'});
+ if(options.legacyTimeline)context.checkReportSequence_=()=>{};
  const put=(name,value)=>context.put_(name,value);
  const account={id:'a',username:'linh',ownerName:'Linh',role:'user',active:true};
  put('Accounts',account);put('Accounts',{id:'b',username:'other',ownerName:'Other',role:'user',active:true});put('Accounts',{id:'admin',username:'admin',ownerName:'Admin',role:'admin',active:true});put('Products',{id:'p',name:'Toma',active:true,priceUsd:99,rate:22500});put('Products',{id:'secret',name:'Hidden',active:true,priceUsd:199,rate:22500});put('Assignments',{id:'ap',accountId:'a',productId:'p',active:true});
@@ -40,7 +43,7 @@ test('Order revenue is calculated on server and ownership enforced',()=>{const {
 test('Target price snapshot survives product price changes',()=>{const {post}=runtime();const p={month:'2026-11',accountId:'a',salary:20000000,targets:[{productId:'p',revenue:10000000,care:2000000}]};let r=post('saveTargets',p,'token-admin');assert.equal(r.ok,true);assert.equal(r.data.targets[0].priceUsd,99);post('saveProduct',{id:'p',name:'Toma',priceUsd:199,rate:22500,active:true},'token-admin');r=post('saveTargets',{...p,targets:p.targets.map(t=>({...t,revision:1}))},'token-admin');assert.equal(r.data.targets[0].priceUsd,99);});
 test('PBKDF2 matches Node standard and login does not expose password hashes',()=>{const {c,put,post}=runtime();const salt='salt-test',password='long-test-password';const actual=c.pbkdf_(password,salt,2);const expected=crypto.pbkdf2Sync(password,salt,2,32,'sha256').toString('base64url')+'=';assert.equal(actual,expected);put('Accounts',{id:'a',username:'linh',ownerName:'Linh',role:'user',active:true,salt,iterations:2,passwordHash:actual});const result=post('login',{username:'linh',password});assert.equal(result.ok,true);assert.equal(result.data.user.passwordHash,undefined);assert.ok(result.data.token);assert.equal(post('bootstrap',{},result.data.token).ok,true);});
 
- test('Report date can change within owner scope without duplicate dates or lost sent timestamp',()=>{const {post}=runtime();let r=post('saveReport',{date:'2026-11-01',entries,status:'submitted',revision:0});const report=r.data.reports[0];assert.equal(post('changeReportDate',{id:report.id,date:'2026-11-02',revision:1},'token-b').ok,false);r=post('changeReportDate',{id:report.id,date:'2026-11-02',revision:1});assert.equal(r.ok,true);assert.equal(r.data.reports[0].date,'2026-11-02');assert.equal(r.data.reports[0].submittedAt,report.submittedAt);assert.equal(r.data.reports[0].status,'submitted');post('saveReport',{date:'2026-11-03',entries,status:'draft',revision:0});assert.equal(post('changeReportDate',{id:report.id,date:'2026-11-03',revision:2}).ok,false);});
+ test('Report date can change within owner scope without duplicate dates or lost sent timestamp',()=>{const {post}=runtime({legacyTimeline:true});let r=post('saveReport',{date:'2026-11-01',entries,status:'submitted',revision:0});const report=r.data.reports[0];assert.equal(post('changeReportDate',{id:report.id,date:'2026-11-02',revision:1},'token-b').ok,false);r=post('changeReportDate',{id:report.id,date:'2026-11-02',revision:1});assert.equal(r.ok,true);assert.equal(r.data.reports[0].date,'2026-11-02');assert.equal(r.data.reports[0].submittedAt,report.submittedAt);assert.equal(r.data.reports[0].status,'submitted');post('saveReport',{date:'2026-11-03',entries,status:'draft',revision:0});assert.equal(post('changeReportDate',{id:report.id,date:'2026-11-03',revision:2}).ok,false);});
 
 test('Order API persists care/split flags and accepts upsale, rejects nonboolean flags',()=>{
  const {post}=runtime();const base={productId:'p',date:'2026-11-04',customerName:'Shared upsale',type:'upsale',isCare:true,isSplit:true,amountUsd:100,rate:22500};
@@ -61,14 +64,14 @@ test('Order amount must be manually supplied; product price never overrides actu
 });
 
 test('API derives carryover on server across date gaps and preserves posted balance while reopened',()=>{
- const {post}=runtime();let r=post('saveReport',{date:'2026-11-01',status:'submitted',entries:[{...entries[0],budget:5000000,remaining:3000000}],revision:0});assert.equal(r.ok,true);const first=r.data.reports[0];
+ const {post}=runtime({legacyTimeline:true});let r=post('saveReport',{date:'2026-11-01',status:'submitted',entries:[{...entries[0],budget:5000000,remaining:3000000}],revision:0});assert.equal(r.ok,true);const first=r.data.reports[0];
  r=post('saveReport',{date:'2026-11-04',status:'submitted',entries:[{...entries[0],received:1000000,budget:0,carryover:999999999,remaining:500000}],revision:0});assert.equal(r.ok,true);let fourth=r.data.reports.find(x=>x.date==='2026-11-04');assert.equal(fourth.entries[0].budget,4000000);assert.equal(fourth.entries[0].carryover,3000000);
  assert.equal(post('reopen',{id:first.id},'token-admin').ok,true);
  r=post('saveReport',{date:'2026-11-01',status:'draft',entries:[{...entries[0],budget:5000000,remaining:2000000}],revision:2});assert.equal(r.ok,true);assert.equal(r.data.reports.find(x=>x.date==='2026-11-04').entries[0].budget,4000000);
  r=post('saveReport',{date:'2026-11-01',status:'submitted',entries:[{...entries[0],budget:5000000,remaining:2000000}],revision:3});assert.equal(r.ok,true);fourth=r.data.reports.find(x=>x.date==='2026-11-04');assert.equal(fourth.entries[0].budget,3000000);assert.equal(fourth.revision,2);
 });
 test('Changing a report date recomputes carryover without duplicating money',()=>{
- const {post}=runtime();post('saveReport',{date:'2026-11-01',status:'submitted',entries:[{...entries[0],budget:5000000,remaining:3000000}],revision:0});let r=post('saveReport',{date:'2026-11-04',status:'submitted',entries:[{...entries[0],received:1000000,budget:0,remaining:500000}],revision:0});const fourth=r.data.reports.find(x=>x.date==='2026-11-04');
+ const {post}=runtime({legacyTimeline:true});post('saveReport',{date:'2026-11-01',status:'submitted',entries:[{...entries[0],budget:5000000,remaining:3000000}],revision:0});let r=post('saveReport',{date:'2026-11-04',status:'submitted',entries:[{...entries[0],received:1000000,budget:0,remaining:500000}],revision:0});const fourth=r.data.reports.find(x=>x.date==='2026-11-04');
  r=post('changeReportDate',{id:fourth.id,date:'2026-11-07',revision:fourth.revision});assert.equal(r.ok,true);assert.equal(r.data.reports.find(x=>x.id===fourth.id).entries[0].budget,4000000);
 });
 
@@ -155,7 +158,7 @@ test('Request role hint cannot grant admin access; denial is typed and writes ar
 });
 
 test('V2 snapshots return only selected dates plus carryover context; no audit/session secrets',()=>{
- const {post,postV2,reads}=runtime();
+ const {post,postV2,reads}=runtime({legacyTimeline:true});
  post('saveReport',{date:'2026-10-20',entries:[{...entries[0],budget:0,received:5000000,remaining:3000000}],status:'submitted'});
  post('saveReport',{date:'2026-11-02',entries:[{...entries[0],budget:0,received:1000000,remaining:1000000}],status:'submitted'});
  post('saveOrder',{productId:'p',date:'2026-10-20',customerName:'Old',type:'sale',amountUsd:100,rate:22500});
@@ -209,4 +212,31 @@ test('A revoked product can be preserved unchanged in a submitted report, but ca
  const {post,put,c}=runtime();let r=post('saveReport',{date:'2026-11-04',entries,status:'submitted'});assert.equal(r.ok,true);put('Assignments',{id:'ap',accountId:'a',productId:'p',active:false});
  const before=c.read_('Reports')[0];r=post('saveReport',{date:before.date,revision:before.revision,entries:before.entries,status:'submitted'});assert.equal(r.ok,true);
  assert.equal(post('saveReport',{date:before.date,revision:r.data.reports[0].revision,entries:[{...before.entries[0],data:999}],status:'submitted'}).code,'FORBIDDEN');
+});
+
+test('First report starts immediately, then missing or draft days block the next date',()=>{
+ const {post}=runtime();
+ assert.equal(post('saveReport',{date:'2026-11-01',entries,status:'submitted'}).ok,true);
+ let blocked=post('saveReport',{date:'2026-11-03',entries,status:'draft'});assert.equal(blocked.ok,false);assert.match(blocked.error,/2026-11-02/);
+ const zero=entries.map(e=>Object.fromEntries(Object.entries(e).map(([k,v])=>[k,k==='productId'?v:0])));
+ assert.equal(post('saveReport',{date:'2026-11-02',entries:zero,status:'draft'}).ok,true);
+ assert.equal(post('saveReport',{date:'2026-11-03',entries,status:'submitted'}).ok,false);
+ assert.equal(post('saveReport',{date:'2026-11-02',entries:zero,status:'submitted',revision:1}).ok,true);
+ assert.equal(post('saveReport',{date:'2026-11-03',entries,status:'submitted'}).ok,true);
+});
+test('Report policy rejects today, future, older dates, and moving a report to bypass a missing day',()=>{
+ const {post}=runtime();
+ for(const date of ['2026-11-05','2026-11-06','2026-10-28'])assert.equal(post('saveReport',{date,entries,status:'submitted'}).ok,false);
+ const first=post('saveReport',{date:'2026-11-01',entries,status:'submitted'});assert.equal(first.ok,true);
+ assert.equal(post('saveReport',{date:'2026-10-31',entries,status:'submitted'}).ok,false);
+ const r=first.data.reports[0];assert.equal(post('changeReportDate',{id:r.id,date:'2026-11-03',revision:1}).ok,false);
+});
+test('Admin corrects old balances with an audit trail and recomputes subsequent carryover',()=>{
+ const {post,put}=runtime();
+ const item=(received,remaining)=>({...entries[0],received,budget:received,remaining});
+ put('Reports',{id:'old1',accountId:'a',date:'2026-10-01',status:'submitted',revision:1,entries:[item(100,20)]});
+ put('Reports',{id:'old2',accountId:'a',date:'2026-10-02',status:'submitted',revision:1,entries:[{...item(100,10),budget:120,carryover:20}]});
+ const result=post('saveReport',{accountId:'a',date:'2026-10-01',entries:[item(100,40)],status:'submitted',revision:1},'token-admin');assert.equal(result.ok,true);
+ const future=result.data.reports.find(r=>r.id==='old2');assert.equal(future.entries[0].carryover,40);assert.equal(future.entries[0].budget,140);assert.equal(future.revision,2);
+ assert.ok(result.data.audit.some(a=>a.action==='carryoverRecomputed'));
 });

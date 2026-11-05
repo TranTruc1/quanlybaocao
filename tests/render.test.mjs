@@ -7,7 +7,7 @@ import {renderToString} from 'react-dom/server';
 import {fixtureDb} from './fixtures.js';
 import {previousDay} from '../src/domain.js';
 const storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};globalThis.window={APP_CONFIG:{}};
-const source=(await fs.readFile(new URL('../src/main.jsx',import.meta.url),'utf8')).replace(/createRoot\(document\.getElementById\('root'\)\)\.render\([^\n]+\);/, '')+'\nexport {App,Overview,Daily,Orders,Targets,Products,Accounts,Login};';
+const source=(await fs.readFile(new URL('../src/main.jsx',import.meta.url),'utf8')).replace(/createRoot\(document\.getElementById\('root'\)\)\.render\([^\n]+\);/, '')+'\nexport {App,Overview,Daily,Orders,Targets,Products,Accounts,Login,ReportList,DataWindow,Filters};';
 const path=new URL('../.review-render-main.mjs',import.meta.url);
 await build({stdin:{contents:source,loader:'jsx',resolveDir:new URL('../src',import.meta.url).pathname},bundle:true,format:'esm',platform:'node',outfile:path.pathname,external:['react','react-dom/*','lucide-react'],loader:{'.css':'empty'}});
 const ui=await import(path.href);await fs.unlink(path);
@@ -24,4 +24,13 @@ test('Reload shows the workspace shell with placeholders, not a verification wal
  storage.set('so-lieu.ui-user',JSON.stringify({id:'reload-user',ownerName:'Trúc',role:'user'}));
  try{const html=renderToString(React.createElement(ui.App));assert.ok(html.includes('sidebar'));assert.ok(html.includes('Trúc'));assert.ok(html.includes('workspace-skeleton'));assert.equal(html.includes('Đang xác minh'),false);assert.equal(html.includes('Đăng nhập</h2>'),false);assert.equal(html.includes('Tổng ngân sách'),false);}
  finally{delete globalThis.sessionStorage;storage.clear();}
+});
+
+test('Report list displays one card per employee and employee detail retains back and date actions',()=>{
+ const range=[previousDay().slice(0,7)+'-01',previousDay().slice(0,7)+'-30'];
+ const filter={mode:'range',from:range[0],to:range[1],date:range[0],month:range[0].slice(0,7),account:'all',product:'all'};
+ const render=selectedAccount=>renderToString(React.createElement(ui.DataWindow.Provider,{value:{scope:{from:range[0],to:range[1]},ensure(){}}},React.createElement(ui.ReportList,{...base,user:admin,FilterComponent:ui.Filters,onOpen(){},initialView:{filter,status:'all',selectedAccount}})));
+ const cards=render(null);assert.ok(cards.includes('employee-report-grid'));assert.equal((cards.match(/aria-label="Xem báo cáo chi tiết của /g)||[]).length,3);assert.equal(cards.includes('table-scroll'),false);
+ const detail=render('u1');assert.ok(detail.includes('Quay lại danh sách'));assert.ok(detail.includes('Tổng kết theo sản phẩm'));assert.ok(detail.includes('Các bảng theo ngày'));assert.ok(detail.includes('Lịch sử sửa'));assert.ok(detail.includes('Sửa ngày'));
+ const daily=renderToString(React.createElement(ui.Daily,{...base,user:admin,initial:db.reports[0],onBack(){}}));assert.ok(daily.includes('Quay lại'));assert.ok(daily.includes('báo cáo nhân viên'));
 });
