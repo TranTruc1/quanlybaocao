@@ -28,19 +28,30 @@ export function aggregate(db,range,account='all',product='all'){
 }
 export function targetMath(t,p,month){const days=new Date(Number(month.slice(0,4)),Number(month.slice(5)),0).getDate();const price=Number(t?.priceUsd??p.priceUsd)*Number(t?.rate??p.rate);const orders=price>0?Math.ceil(Number(t?.revenue||0)/price):0;return {price,orders,perDay:orders/days,days};}
 
+// Closing balances are snapshots per account/product, never a sum of daily carryovers.
+export function closingBalances(reports,end,account='all',product='all'){
+ const balances=new Map();
+ for(const r of [...reports].filter(r=>r.date<=end&&(account==='all'||r.accountId===account)).sort((a,b)=>a.date.localeCompare(b.date))){
+  for(const e of r.entries||[])if(product==='all'||e.productId===product)balances.set(JSON.stringify([r.accountId,e.productId]),{accountId:r.accountId,productId:e.productId,remaining:Number(e.remaining||0)});
+ }
+ return [...balances.values()];
+}
+
 // Monthly goals are full-month goals for every month touched by the selected range.
 export function productSummary(db, range, account='all', product='all') {
  const stats=aggregate(db,range,account,product);
+ const balances=closingBalances(db.balanceReports||db.reports,range[1],account,product);
  const keys=['spend','data','tt','ktt','success','upsale','revenue','care','orderCount','careOrderCount'];
- const empty=()=>Object.fromEntries([...keys,'goal'].map(k=>[k,0]));
+ const empty=()=>Object.fromEntries([...keys,'goal','remaining'].map(k=>[k,0]));
  const products=db.products.filter(p=>product==='all'||p.id===product);
  const columns=products.map(p=>{
   const sums=empty();
   for(const row of stats.detail.filter(r=>r.productId===p.id))for(const k of keys)sums[k]+=row[k];
+  sums.remaining=balances.filter(b=>b.productId===p.id).reduce((n,b)=>n+b.remaining,0);
   sums.goal=(db.targets||[]).filter(t=>t.productId===p.id&&(account==='all'||t.accountId===account)&&t.month>=range[0].slice(0,7)&&t.month<=range[1].slice(0,7)).reduce((v,t)=>v+Number(t.revenue||0),0);
   return {id:p.id,label:p.name,...sums,costPerData:divide(sums.spend,sums.data),costRatio:divide(sums.spend,sums.revenue),achieved:divide(sums.revenue,sums.goal)};
  });
- const total=columns.reduce((s,c)=>{for(const k of [...keys,'goal'])s[k]+=c[k];return s;},empty());
+ const total=columns.reduce((s,c)=>{for(const k of [...keys,'goal','remaining'])s[k]+=c[k];return s;},empty());
  return {columns,total:{id:'total',label:'Tổng SP',...total,costPerData:divide(total.spend,total.data),costRatio:divide(total.spend,total.revenue),achieved:divide(total.revenue,total.goal)}};
 }
 

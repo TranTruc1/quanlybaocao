@@ -3,7 +3,7 @@ import {productTone} from './palette.js';
 import {productSummary,money,pct,countFormat} from './domain.js';
 
 const metrics=[
- ['spend','Tổng ngân sách'],['data','Tổng data'],['costPerData','Chi phí mess'],
+ ['spend','Tổng ngân sách'],['remaining','Ngân sách thừa cuối kỳ'],['data','Tổng data'],['costPerData','Chi phí mess'],
  ['tt','Data tt'],['ktt','Data ktt'],['success','Đơn TC','count'],['upsale','Upsale','count'],['careOrderCount','Đơn chăm','count'],['orderCount','Tổng đơn quy đổi','count'],
  ['revenue','Doanh số'],['care','Doanh thu chăm'],['costRatio','Tỷ lệ chi phí/DS','percent'],
  ['goal','Mục tiêu'],['achieved','Đạt','percent']
@@ -17,6 +17,6 @@ export default function ProductSummary({db,range,account,product}) {
    <thead><tr><th>Chỉ tiêu</th>{all.map(c=><th key={c.id} className={c.id==='total'?'summary-total':''} style={c.id==='total'?{}:{background:productTone(c.id).color,color:'#fff'}}>{c.label}</th>)}</tr></thead>
    <tbody>{metrics.map(([key,label,format])=><tr key={key} className={key==='goal'||key==='achieved'?'summary-goal':''}><th scope="row">{label}</th>{all.map(c=><td key={c.id} className={c.id==='total'?'summary-total':''} style={c.id==='total'?{}:{background:productTone(c.id).background,color:productTone(c.id).text}}>{format==='percent'?pct(c[key]):format==='count'?countFormat(c[key]):money(c[key])}</td>)}</tr>)}</tbody>
   </table></div>
-  <div className="table-note"><span>Tổng ngân sách = ngân sách − thừa. Chi phí mess = tổng ngân sách ÷ tổng data. Đạt = doanh số ÷ mục tiêu.</span><span>Mục tiêu là tổng mục tiêu tháng thuộc khoảng đã chọn, không chia theo ngày. Đơn TC/Upsale cộng từ danh sách đơn; chia đơn = 0,5. Upsale thuộc đơn chăm. Doanh thu chăm theo dõi riêng.</span></div>
+  <div className="table-note"><span>Ngân sách thừa cuối kỳ lấy số dư gần nhất đến ngày kết thúc, theo từng account và sản phẩm; giữ nguyên qua ngày chưa có báo cáo, không cộng dồn số dư hằng ngày. Tổng ngân sách = ngân sách − thừa. Chi phí mess = tổng ngân sách ÷ tổng data. Đạt = doanh số ÷ mục tiêu.</span><span>Mục tiêu là tổng mục tiêu tháng thuộc khoảng đã chọn, không chia theo ngày. Đơn TC/Upsale cộng từ danh sách đơn; chia đơn = 0,5. Upsale thuộc đơn chăm. Doanh thu chăm theo dõi riêng.</span></div>
  </section>;
 }
