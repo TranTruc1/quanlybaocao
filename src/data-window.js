@@ -3,7 +3,7 @@ export function containsRange(scope,range){return !scope||(scope.from<=range[0]&
 export function mergeDelta(db,next){
  if(next?.kind!=='delta')return next;
  if(!db)throw Error('Chưa tải dữ liệu ban đầu.');
- const result={...db,viewer:next.viewer,apiVersion:next.apiVersion};
+ const result={...db,viewer:next.viewer,apiVersion:next.apiVersion,notifications:next.notifications||db.notifications};
  for(const key of ['accounts','products','assignments','reports','orders','targets']){
   const deleted=new Set(next.removed?.[key]||[]),map=new Map((db[key]||[]).filter(r=>!deleted.has(r.id)).map(r=>[r.id,r]));
   for(const row of next.upsert?.[key]||[]){const old=map.get(row.id);if(old?.revision&&row.revision&&old.revision>row.revision)continue;map.set(row.id,row);}

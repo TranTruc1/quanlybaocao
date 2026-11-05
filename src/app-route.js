@@ -11,6 +11,7 @@ export function parseAppRoute(hash=''){
   const report={id:id(params.get('report')),accountId:id(params.get('account')),date:date(params.get('date'))};
   return {...base,report:report.id||report.accountId||report.date?report:null};
  }
+ if(['orders','products','accounts','targets'].includes(page)){const focus=id(params.get('focus'));if(focus)base.focus=focus;if(date(params.get('date')))base.date=params.get('date');if(id(params.get('account')))base.accountId=params.get('account');if(/^\d{4}-(0[1-9]|1[0-2])$/.test(params.get('month')||''))base.month=params.get('month');}
  return page==='overview'?{...base,employee:id(params.get('employee')),day:id(params.get('day'))}:base;
 }
 export function appRouteHash(route){
@@ -25,5 +26,6 @@ export function appRouteHash(route){
   if(id(route.employee))params.set('employee',route.employee);
   if(id(route.day))params.set('day',route.day);
  }
+ if(['orders','products','accounts','targets'].includes(page)){if(id(route.focus))params.set('focus',route.focus);if(date(route.date))params.set('date',route.date);if(id(route.accountId))params.set('account',route.accountId);if(/^\d{4}-(0[1-9]|1[0-2])$/.test(route.month||''))params.set('month',route.month);}
  return '#/'+(['user','admin','sale'].includes(route?.area)?route.area+'/':'')+paths[page]+(params.size?'?'+params:'');
 }

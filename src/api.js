@@ -7,7 +7,7 @@ export async function request(action,payload={},session){try{return await reques
 async function requestImpl(action,payload={},session){
  let uiRole;try{uiRole=JSON.parse(localStorage.getItem('so-lieu.ui-user'))?.role;}catch{}
   if(!/^https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec$/.test(config.apiUrl||''))throw Error('Cấu hình apiUrl phải là URL HTTPS Apps Script /exec hợp lệ.');
-  const read=['login','bootstrap','reportHistory','logout'].includes(action),key=JSON.stringify([session?.token,action,payload]);
+  const read=['login','bootstrap','reportHistory','notifications','ackNotifications','logout'].includes(action),key=JSON.stringify([session?.token,action,payload]);
   if(!read&&!requestIds.has(key)){requestIds.set(key,crypto.randomUUID().replaceAll('-',''));}
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
   try{
