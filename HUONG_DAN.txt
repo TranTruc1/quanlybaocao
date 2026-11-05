@@ -1,7 +1,0 @@
-Cap nhat frontend: chep de file vao dung thu muc du an. Khong co file config hoac GS.
-F5 hien ngay khung giao dien va placeholder; token gui ngam, server xac thuc truoc khi doc du lieu trong cung request bootstrap. Khong goi xac minh rieng. Token sai/het han moi tu dang xuat.
-Chay npm test va npm run build, sau do:
-git add .
-git commit -m "F5 kiem tra token ngam, bo man xac minh"
-git push origin main
-Khong can trien khai lai Apps Script.

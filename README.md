@@ -1,108 +1,65 @@
-# Sổ Liệu — bản chuẩn bị triển khai
+# Sổ Liệu — Next.js + MongoDB
 
-React + Vite, backend Google Apps Script, dữ liệu Google Sheets. Giao diện cho PC/mobile. Chỉ có đăng nhập tài khoản/mật khẩu qua máy chủ; không còn chế độ trải nghiệm, tài khoản chọn sẵn hay cơ sở dữ liệu trên localStorage.
+Bản 2.0 giữ giao diện React, vai trò Admin / MKT / SALE, báo cáo, đơn hàng, mục tiêu, phân phối và thông báo. Backend chạy trong Next.js trên Vercel, dữ liệu lưu ở MongoDB Atlas. Không gọi Apps Script khi sử dụng web.
 
-Đọc **[DEPLOY_VERCEL.md](DEPLOY_VERCEL.md)** để triển khai GitHub → Vercel và **[REVIEW.md](REVIEW.md)** để xem thay đổi, kiểm thử và giới hạn.
+## Chạy ứng dụng
 
-## Chạy trên máy
+Cần Node.js 22 hoặc 24.
 
-Yêu cầu Node 22 hoặc 24.
-
-```bash
+```sh
 npm ci
+```
+
+Sao chép `.env.example` thành `.env.local`, điền các giá trị thật ở máy của bạn:
+
+```dotenv
+MONGODB_URI=mongodb+srv://...
+MONGODB_DB=quanlybaocao
+SL_AUTH_PEPPER=...
+```
+
+Cấu hình kết nối phía server: `config/mongodb.js`. Giao diện gọi `/api/rpc` cùng domain; không có URL MongoDB hoặc mật khẩu trong frontend. Không dùng `SO_LIEU_API_URL` hay `public/config.js` nữa.
+
+```sh
+npm run db:setup
 npm run dev
 ```
 
-Điền URL Apps Script `/exec` vào `public/config.js`. Link Sheet có thể để trống. Thiếu URL API thì trang đăng nhập hiển thị thông báo cấu hình và không cho đăng nhập.
+Database phải hỗ trợ giao dịch nhiều document: dùng Atlas hoặc MongoDB replica set. MongoDB standalone không đủ cho phần chuyển ngân sách.
 
-```js
-window.APP_CONFIG = {
-  appName: 'Sổ Liệu',
-  apiUrl: 'https://script.google.com/macros/s/DEPLOYMENT_ID/exec',
-  sheetUrl: '',
-  currency: 'VND'
-};
-```
+**Nếu có dữ liệu Sheets:** làm theo `HUONG_DAN_CHUYEN_DU_LIEU.md`, không tạo admin mới trước khi nhập.
 
-```bash
+**Nếu bắt đầu mới hoàn toàn:** điền `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_PASSWORD` (6–20 ký tự) trong `.env.local`, chạy `npm run db:admin`, sau đó xóa ba biến khởi tạo. Không có tài khoản demo mặc định.
+
+## Thay đổi nghiệp vụ
+
+- Chuyển số dư từ sản phẩm này sang nhiều sản phẩm khác trong cùng tài khoản vào ngày báo cáo. Nút **Chuyển ngân sách** → chọn nguồn, đích, số tiền → **Áp dụng vào báo cáo** → **Lưu / Gửi báo cáo**. Tất cả lưu trong một giao dịch.
+- Chỉ dùng số dư từ các ngày trước, không dùng tiền mới nhận hoặc tiền vừa nhận từ sản phẩm khác để chuyển tiếp trong cùng ngày. Nếu cần chuyển tiếp, thực hiện ở báo cáo ngày sau. Không tạo thêm tiền khi chuyển.
+- Ngân sách khả dụng = dư trước ngày + tiền mới nhận + chuyển đến − chuyển đi. Giữ số dư qua các ngày chưa có báo cáo. Sửa/xóa báo cáo cũ sẽ tính lại các ngày sau; nếu gây thiếu dư cho một khoản chuyển, toàn bộ thao tác bị từ chối và báo ngày cần kiểm tra.
+- Báo cáo MKT: Data ktt = Tổng data − Data tương tác; không cho tương tác vượt tổng. Đơn bán hàng và Upsale lấy từ đơn khớp tài khoản, sản phẩm, ngày; chia đơn 0,5 và bùng 0.
+- Các báo cáo hiển thị dòng riêng cho bán hàng, Upsale, chăm sóc. Dòng chăm sóc không chứa lại Upsale. Tổng doanh thu chăm trong các chỉ số tổng hợp cũ vẫn gồm chăm sóc + Upsale.
+- Admin có thể thêm, sửa, xóa báo cáo của nhân viên; đơn hàng độc lập được giữ lại khi xóa báo cáo. Thao tác có lịch sử và thông báo.
+- Nút **Thêm / Yêu cầu báo cáo** cho admin tự mở bảng hoặc yêu cầu nhân viên điền/sửa kèm nội dung. Yêu cầu hiển thị trong chuông và danh sách đang chờ; click mở đúng ngày. Nhân viên được sửa đúng ngày đang được yêu cầu kể cả ngoài 7 ngày. Yêu cầu tự hoàn tất khi báo cáo được lưu.
+- Nội dung chưa lưu tiếp tục được giữ khi F5. Phiên đăng nhập 12 giờ dùng cookie HttpOnly; token thật không được lưu trong JavaScript. Mọi API kiểm tra phiên và quyền phía server.
+
+## Triển khai và kiểm tra
+
+Xem `DEPLOY_VERCEL.md` và `REVIEW.md`.
+
+```sh
 npm test
 npm run build
-npm run preview
+npm run start
 ```
 
-Vercel dùng `SO_LIEU_API_URL` và tùy chọn `SO_LIEU_SHEET_URL`; file build tạo `dist/config.js`. Các URL này công khai. Không đưa mật khẩu, token hay pepper vào frontend/GitHub.
+`npm run test:integration` tạo MongoDB replica set tạm, kiểm tra ghi đồng thời, rollback và chống ghi trùng. Lệnh này cần môi trường cho phép chạy tiến trình MongoDB và tải binary lần đầu; không truy cập dữ liệu thật.
 
-## Apps Script và các bảng
+Đã bỏ backend Apps Script và cấu hình Vite cũ. Giữ `migration/ExportSheets.gs` chỉ để xuất dữ liệu cũ khi cần; web không gọi file này khi hoạt động.
 
-- Mở Google Sheet → Tiện ích mở rộng → Apps Script. Dán `backend/Code.gs` và cấu hình `backend/appsscript.json`.
-- Cài mới: chạy `setup()` rồi `createInitialAdmin()`. Có thể dùng file khởi tạo tùy chọn `backend/KhoiTaoSoLieu.gs` để tạo cột và tài khoản ban đầu. Không tự chạy file khởi tạo khi cập nhật.
-- Đã dùng bản trước: thay Code.gs và triển khai phiên bản Web app mới, giữ Sheet và Script Properties. Không tạo lại tài khoản.
-- Web app chạy dưới quyền chủ Sheet và truy cập được từ frontend. Không chia sẻ quyền đọc/sửa Sheet gốc cho nhân viên.
+## Cập nhật giao diện báo cáo
 
-Mỗi sheet dưới đây có **hai cột `id`, `json`**. API quản lý ID và các trường trong JSON, không thêm cột thủ công.
+Chọn nhân viên bằng icon và tên (MKT / SALE); đổi bộ lọc giữ nguyên nhân viên đang xem. Bảng chi tiết hỗ trợ kéo chuột ngang và thanh lưu cố định. Các số đơn và doanh số cùng loại hiển thị liền nhau. Bỏ danh sách ngày trùng lặp phía dưới, giữ chọn ngày/lịch sử/sửa ngày phía trên.
 
-| Sheet | Nội dung |
-| --- | --- |
-| SL_Accounts | username, ownerName, role, active, revision và hash mật khẩu; API chỉ trả trường công khai |
-| SL_Products | tên, giá USD, tỷ giá, active, revision |
-| SL_Assignments | phân phối sản phẩm cho account |
-| SL_Reports | ngày báo cáo, account, entries, trạng thái, revision và thời điểm gửi |
-| SL_Orders | ngày, khách, sản phẩm, USD/tỷ giá/VNĐ, loại/chăm/chia/bùng, revision |
-| SL_Targets | mục tiêu doanh thu/chăm/lương theo tháng và sản phẩm, giá chụp theo kỳ, revision |
-| SL_Sessions | hash token ngẫu nhiên và thời hạn, không trả cho frontend |
-| SL_Audit | thao tác, snapshot trước/sau báo cáo, receipt chống trùng |
+MKT bấm icon ngay ô Dư chuyển sang để chuyển cho nhiều sản phẩm. Modal chặn tổng chuyển vượt dư trước khi áp dụng; không có bước admin duyệt. Ngân sách khả dụng nằm cạnh tên sản phẩm, Thừa cuối ngày ở hàng đầu. Admin không có nút chuyển tiền trên giao diện xem báo cáo.
 
-## Nghiệp vụ
-
-**Báo cáo ngày:** mặc định hôm qua theo giờ Việt Nam. Tiền mới nhận chỉ nhập phần nhận thêm. Dư chuyển sang lấy số dư cuối gần nhất của đúng account/sản phẩm, giữ qua ngày trống. Tổng khả dụng = dư chuyển sang + tiền mới nhận. Thừa cuối ngày của bảng mới mặc định 0 để tự nhập. Chi thực tế = tổng khả dụng − thừa cuối ngày; chi phí mess = chi thực tế ÷ tổng data. Bảng cũ không có `received` giữ ngân sách cũ để không cộng dư hai lần.
-
-**Đơn hàng:** nhập trong bảng riêng, số tiền do user nhập, không gán mặc định từ giá sản phẩm. Đơn chia tính 0,5; doanh thu vẫn theo số tiền nhập. Upsale hoặc tick Chăm thuộc doanh thu chăm, theo dõi riêng với bán hàng. Bùng chỉ có khi sửa, loại khỏi số đơn/doanh thu và hiển thị nền tối; bỏ tick thì khôi phục. Desktop nhập nhiều dòng, bỏ qua dòng trống và bắt chọn sản phẩm; mobile thêm từng đơn.
-
-**Tổng quan:** chọn ngày, khoảng ngày hoặc tháng; admin mặc định hôm qua và có bộ lọc account/sản phẩm. Tỷ lệ chi phí/DS = tổng chi thực tế ÷ tổng doanh thu bán hàng. Mẫu số bằng 0 trả 0. Tổng/trung bình dùng tổng số và đúng số account-ngày đã gửi, không cộng các tỷ lệ. Mục tiêu = mục tiêu đầy đủ của các tháng chạm khoảng đang chọn, không chia theo ngày.
-
-**Mục tiêu tháng:** user sửa mục tiêu của mình với sản phẩm đang được giao; admin xem/sửa từng account. Giá do admin quản lý và chụp theo kỳ. Số đơn cần đạt = làm tròn lên(mục tiêu doanh thu ÷ giá VNĐ), TB/ngày chia số ngày thật trong tháng. Doanh thu chăm là mục riêng. Có tổng tất cả.
-
-**Phân quyền:** admin xem/sửa báo cáo/đơn đã có, quản lý sản phẩm, account, role và phân phối. User chỉ dữ liệu của mình. Xóa user là xóa mềm, thu hồi phiên/quyền nhập và giữ lịch sử. Không hạ quyền admin cuối cùng đang hoạt động. Report đã gửi được sửa và ghi lịch sử; revision chặn ghi đè khi dữ liệu ở máy khác đã thay đổi.
-
-## Luồng dữ liệu và bảo mật
-
-- Đăng nhập trả dữ liệu ban đầu trong cùng request. Đổi menu không gọi bước xác minh riêng. Mỗi request dữ liệu gửi token, máy chủ đọc quyền hiện tại.
-- Token giữ trong sessionStorage của tab; F5/tải lại vẫn giữ phiên và tải lại dữ liệu qua backend. Role hiển thị cục bộ không cấp quyền máy chủ. Chỉ token sai/hết hạn hoặc tài khoản không còn hoạt động mới tự đăng xuất. Thiếu quyền hiện modal và giữ phiên; lỗi nhập liệu hoặc mạng cho phép thử lại.
-- Snapshot chỉ gửi báo cáo/đơn/mục tiêu theo kỳ, kèm ngữ cảnh số dư trước kỳ. Khoảng xem tối đa 367 ngày mỗi lần. Lịch sử sửa tải khi mở và có Tải thêm.
-- Lưu trả delta các bản ghi thay đổi. Request ID và ID nghiệp vụ ổn định hỗ trợ retry không tạo trùng. Không đổi dữ liệu hay F5 khi chưa biết một lần lưu đã thành công hay chưa; kiểm tra lại danh sách nếu có lỗi kéo dài.
-- Apps Script memo dữ liệu trong từng request, kiểm tra trước khi ghi, gom dòng liền nhau và dùng ScriptLock. Không cache quyền giữa các request.
-- Mật khẩu PBKDF2-HMAC-SHA256 có salt và được HMAC thêm bằng pepper riêng ở Script Properties. Password cũ nâng cấp khi đăng nhập thành công. Không xóa `SL_AUTH_PEPPER`, không công khai dự án Apps Script.
-- CSV escape công thức. Frontend không chèn HTML từ dữ liệu người dùng. Vercel có CSP/security headers; biến cấu hình công khai không chứa thông tin xác thực.
-
-## Cấu trúc
-
-```text
-src/                    React, API client, tính toán, component và quản lý cửa sổ dữ liệu
-backend/Code.gs         Backend cần cập nhật trong Apps Script
-backend/KhoiTaoSoLieu.gs File tạo bảng/tài khoản ban đầu tùy chọn
-public/config.js        URL cấu hình công khai
-scripts/                Kiểm tra và xuất config cho build
-vercel.json             Cấu hình Vercel và headers
-.github/workflows/      Kiểm thử/build/audit khi push hoặc PR
-tests/                  Kiểm thử + fixture chỉ dùng kiểm thử, không đưa vào frontend build
-```
-
-Chưa có thao tác push GitHub hay triển khai Vercel vào tài khoản của bạn trong phiên chuẩn bị này. Các giới hạn Sheets/Apps Script và các bước kiểm tra thật trước vận hành nằm trong `DEPLOY_VERCEL.md`.
-
-### Nhập báo cáo tuần tự
-
-- User chỉ nhập/sửa trong 7 ngày gần nhất đến hết hôm qua, theo giờ Việt Nam.
-- Chưa có lịch sử: được chọn ngày đầu ngay trong khoảng này, không phải điền bù trước ngày bắt đầu.
-- Sau mốc đầu: phải gửi từng ngày trước khi nhập ngày sau; bản nháp chưa được tính. Ngày không phát sinh vẫn gửi đủ các ô số 0.
-- Có lịch sử từ trước cửa sổ 7 ngày: bổ sung ngày thiếu từ đầu cửa sổ, không phải bổ sung toàn bộ lịch sử.
-- Admin được sửa báo cáo lịch sử đã có. Sửa số dư sẽ tính lại các báo cáo sau, tăng phiên bản và ghi lịch sử; nếu số dư sau vượt ngân sách thì từ chối lưu, không âm thầm ghi sai.
-
-Địa chỉ production chính của người dùng: https://quanlybaocao.vercel.app
-
-### Báo cáo hợp nhất và phân phối khi tạo sản phẩm
-
-- Menu chỉ còn Báo cáo, tích hợp tổng quan, biểu đồ mở bằng modal, xuất CSV, xem theo nhân viên hoặc sản phẩm. Một bộ lọc dùng chung cho toàn bộ số liệu.
-- Không có nút Lưu nháp hay bộ lọc bản nháp trong giao diện. Gửi báo cáo mới và lưu chỉnh sửa đều là bản chính thức. Dữ liệu nháp cũ được giữ và cộng đủ, hiển thị Chưa gửi đến khi người dùng gửi chính thức; không tự xóa hoặc tự xác nhận.
-- Vẫn tính đơn hàng khi chưa có báo cáo quảng cáo; đơn bùng không tính, đơn chia quy đổi 0,5. Tổng và tỷ lệ đều dùng chung nguồn dữ liệu.
-- Khi thêm sản phẩm đơn lẻ hoặc nhiều dòng, tick nhân viên để phân phối ngay. Backend kiểm tra tất cả nhân viên trước khi ghi và hỗ trợ retry với ID ổn định nếu việc ghi sản phẩm/phân phối bị gián đoạn.
-- Bản cập nhật này cần cập nhật Code.gs và triển khai Phiên bản mới trước khi cập nhật frontend. Giữ nguyên config và URL API.
+Admin có nút Yêu cầu sửa báo cáo tại bảng chi tiết. User nhận modal khi tải trang, khi quay lại tab, hoặc trong khoảng 30 giây nếu đang mở web. Chỉ gọi API thông báo gọn để kiểm tra cập nhật.

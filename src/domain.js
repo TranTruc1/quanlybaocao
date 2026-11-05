@@ -1,3 +1,4 @@
+import {normalizeBudgets} from './budget-transfers.js';
 export const fields = [ ['budget','Ngân sách'],['remaining','Thừa cuối ngày'],['data','Tổng data'],['tt','Data tt'],['ktt','Data ktt'],['success','Đơn TC'],['upsale','Upsale'],['appointments','Đơn hẹn'],['late','Rep chậm'] ];
 export const money = n => new Intl.NumberFormat('vi-VN',{maximumFractionDigits:0}).format(Number(n)||0);
 export const pct = n => new Intl.NumberFormat('vi-VN',{style:'percent',maximumFractionDigits:2}).format(Number(n)||0);
@@ -16,11 +17,11 @@ export function aggregate(db,range,account='all',product='all'){
  const reports=normalizeReportBudgets(db.reports).filter(r=>r.status==='submitted'&&match(r));
  const orders=db.orders.filter(o=>!o.isBounced&&match(o)&&(product==='all'||o.productId===product));
  const rows=new Map();
- const get=(a,d,p)=>{const key=[a,d,p].join('|');if(!rows.has(key)) rows.set(key,{accountId:a,date:d,productId:p,budget:0,remaining:0,data:0,tt:0,ktt:0,success:0,upsale:0,appointments:0,late:0,spend:0,revenue:0,care:0,orderCount:0,careOrderCount:0,submitted:false});return rows.get(key);};
+ const get=(a,d,p)=>{const key=[a,d,p].join('|');if(!rows.has(key)) rows.set(key,{accountId:a,date:d,productId:p,budget:0,remaining:0,data:0,tt:0,ktt:0,success:0,upsale:0,appointments:0,late:0,spend:0,revenue:0,care:0,orderCount:0,careOnlyCount:0,upsaleRevenue:0,careOnlyRevenue:0,careOrderCount:0,submitted:false});return rows.get(key);};
  for(const r of reports)for(const e of r.entries){if(product!=='all'&&e.productId!==product)continue;const x=get(r.accountId,r.date,e.productId);for(const [k]of fields)if(!['success','upsale'].includes(k))x[k]+=Number(e[k]||0);x.spend+=netSpend(e);x.submitted=true;}
- for(const o of orders){const x=get(o.accountId,o.date,o.productId);x[isCareOrder(o)?'care':'revenue']+=Number(o.amountVnd||0);const weight=orderWeight(o);x.orderCount+=weight;if(isCareOrder(o))x.careOrderCount+=weight;else x.success+=weight;if(o.type==='upsale')x.upsale+=weight;}
+ for(const o of orders){const x=get(o.accountId,o.date,o.productId);x[isCareOrder(o)?'care':'revenue']+=Number(o.amountVnd||0);const weight=orderWeight(o);x.orderCount+=weight;if(isCareOrder(o))x.careOrderCount+=weight;else x.success+=weight;if(o.type==='upsale'){x.upsale+=weight;x.upsaleRevenue+=Number(o.amountVnd||0);}else if(isCareOrder(o)){x.careOnlyCount+=weight;x.careOnlyRevenue+=Number(o.amountVnd||0);}}
  const detail=[...rows.values()].sort((a,b)=>b.date.localeCompare(a.date)||a.accountId.localeCompare(b.accountId));
- const total=detail.reduce((a,r)=>{for(const k of ['budget','remaining','data','tt','ktt','success','upsale','appointments','late','spend','revenue','care','orderCount','careOrderCount'])a[k]=(a[k]||0)+r[k];return a;},{budget:0,remaining:0,data:0,tt:0,ktt:0,success:0,upsale:0,appointments:0,late:0,spend:0,revenue:0,care:0,orderCount:0,careOrderCount:0});
+ const total=detail.reduce((a,r)=>{for(const k of ['budget','remaining','data','tt','ktt','success','upsale','appointments','late','spend','revenue','care','orderCount','careOrderCount','careOnlyCount','upsaleRevenue','careOnlyRevenue'])a[k]=(a[k]||0)+r[k];return a;},{budget:0,remaining:0,data:0,tt:0,ktt:0,success:0,upsale:0,appointments:0,late:0,spend:0,revenue:0,care:0,orderCount:0,careOnlyCount:0,upsaleRevenue:0,careOnlyRevenue:0,careOrderCount:0});
  const accountDays=new Set(detail.filter(r=>r.submitted).map(r=>r.accountId+'|'+r.date)).size;
  const days=new Set(detail.filter(r=>r.submitted).map(r=>r.date)).size;
  const averageTotal=detail.filter(r=>r.submitted).reduce((a,r)=>{for(const k of ['spend','data','success','revenue','care'])a[k]+=r[k];return a;},{spend:0,data:0,success:0,revenue:0,care:0});
@@ -41,7 +42,7 @@ export function closingBalances(reports,end,account='all',product='all'){
 export function productSummary(db, range, account='all', product='all') {
  const stats=aggregate(db,range,account,product);
  const balances=closingBalances(db.balanceReports||db.reports,range[1],account,product);
- const keys=['spend','data','tt','ktt','success','upsale','revenue','care','orderCount','careOrderCount'];
+ const keys=['spend','data','tt','ktt','success','upsale','revenue','care','orderCount','careOrderCount','careOnlyCount','upsaleRevenue','careOnlyRevenue'];
  const empty=()=>Object.fromEntries([...keys,'goal','remaining'].map(k=>[k,0]));
  const products=db.products.filter(p=>product==='all'||p.id===product);
  const columns=products.map(p=>{
@@ -76,20 +77,4 @@ export function carryoverBefore(reports,account,product,date){
  const previous=candidates[0];
  return {amount:Number((previous?.status==='submitted'?previous?.entries:previous?.postedEntries)?.find(e=>e.productId===product)?.remaining||0),date:previous?.date||null};
 }
-export function normalizeReportBudgets(reports){
- const balances=Object.create(null);
- return JSON.parse(JSON.stringify(reports)).sort((a,b)=>a.date.localeCompare(b.date)).map(r=>{
-  r.entries=r.entries.map(e=>{
-   const key=r.accountId+'|'+e.productId;
-   if(!r._normalized&&Object.prototype.hasOwnProperty.call(e,'received')){
-    const received=Number(e.received);
-    if(!Number.isFinite(received)||received<0||received>1e13)throw Error('Tiền mới nhận phải là số không âm.');
-    e.received=received;e.carryover=balances[key]||0;e.budget=e.received+e.carryover;
-    if(r.status==='submitted'&&Number(e.remaining)>e.budget)throw Error('Ngày '+r.date+': thừa cuối ngày vượt ngân sách sau khi chuyển dư. Kiểm tra tiền mới nhận và số dư.');
-   }
-   if(r.status==='submitted')balances[key]=Number(e.remaining||0);
-   else if(r.postedEntries){const posted=r.postedEntries.find(x=>x.productId===e.productId);if(posted)balances[key]=Number(posted.remaining||0);}
-   return e;
-  });return r;
- });
-}
+export function normalizeReportBudgets(reports){return normalizeBudgets(reports);}

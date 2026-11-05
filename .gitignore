@@ -7,3 +7,7 @@ dist/
 coverage/
 *.log
 .review-render-*.mjs
+
+.next/
+out/
+migration/*.json

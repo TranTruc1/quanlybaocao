@@ -4,12 +4,14 @@ import {ActionButton} from './Operations.jsx';
 import {money,pct,countFormat} from './domain.js';
 export function ReportMetrics({group}){
  const t=group.total;
- const metrics=[['Tổng ngân sách đã chi',money(t.spend)+' đ'],['Tổng data',money(t.data)],['Chi phí mess',money(group.costPerData)+' đ'],
-  ['Data tt',money(t.tt)],['Data ktt',money(t.ktt)],['Đơn TC',countFormat(t.success)],['Upsale',countFormat(t.upsale)],
-  ['Đơn chăm',countFormat(t.careOrderCount)],['Đơn quy đổi',countFormat(t.orderCount)],['Đơn hẹn',money(t.appointments)],['Rep chậm',money(t.late)],
-  ['Doanh số bán hàng',money(t.revenue)+' đ'],['Doanh thu chăm',money(t.care)+' đ'],['Tỷ lệ chi phí/DS',pct(group.costRatio)],
-  ['Mục tiêu doanh thu',money(group.goal)+' đ'],['Đạt mục tiêu',pct(group.achieved)],['Dư cuối kỳ đã chọn',money(group.remaining)+' đ'],
-  ['Chi TB/ngày có bảng',money(group.averageSpend)+' đ'],['Data TB/ngày có bảng',money(group.averageData)]];
+ const metrics=[['Tổng ngân sách đã chi',money(t.spend)+' đ'],['Dư cuối kỳ đã chọn',money(group.remaining)+' đ'],
+ ['Tổng data',money(t.data)],['Chi phí mess',money(group.costPerData)+' đ'],['Data tt',money(t.tt)],['Data ktt',money(t.ktt)],
+ ['Đơn bán hàng',countFormat(t.success)],['Doanh số bán hàng',money(t.revenue)+' đ'],
+ ['Đơn Upsale',countFormat(t.upsale)],['Doanh số Upsale',money(t.upsaleRevenue)+' đ'],
+ ['Đơn chăm sóc',countFormat(t.careOnlyCount)],['Doanh số chăm sóc',money(t.careOnlyRevenue)+' đ'],
+ ['Đơn quy đổi',countFormat(t.orderCount)],['Tỷ lệ chi phí/DS',pct(group.costRatio)],['Đơn hẹn',money(t.appointments)],['Rep chậm',money(t.late)],
+ ['Mục tiêu doanh thu',money(group.goal)+' đ'],['Đạt mục tiêu',pct(group.achieved)],
+ ['Chi TB/ngày có bảng',money(group.averageSpend)+' đ'],['Data TB/ngày có bảng',money(group.averageData)]];
  return <dl className="report-card-metrics">{metrics.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 export default function ReportCards({groups,onSelect}){

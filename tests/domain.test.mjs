@@ -57,3 +57,18 @@ test('Bounced sale and care orders subtract all counts/revenue; unmarking restor
  let r=aggregate({reports:[],orders},['2026-11-01','2026-11-30']);assert.equal(r.total.orderCount,0);assert.equal(r.total.revenue,0);assert.equal(r.total.care,0);assert.equal(r.total.upsale,0);
  orders.forEach(o=>o.isBounced=false);r=aggregate({reports:[],orders},['2026-11-01','2026-11-30']);assert.equal(r.total.orderCount,1.5);assert.equal(r.total.success,.5);assert.equal(r.total.upsale,1);assert.equal(r.total.revenue,100);assert.equal(r.total.care,200);
 });
+
+test('Product closing balances use the latest value by account/product through the end date, including idle days',()=>{
+ const reports=[
+  {accountId:'a',date:'2026-10-31',status:'submitted',_carryContext:true,entries:[entry('p',{remaining:300}),entry('q',{remaining:40})]},
+  {accountId:'a',date:'2026-11-01',status:'submitted',entries:[entry('p',{budget:500,remaining:200})]},
+  {accountId:'b',date:'2026-11-02',status:'submitted',entries:[entry('p',{budget:500,remaining:100})]},
+  {accountId:'a',date:'2026-11-03',status:'submitted',entries:[entry('p',{budget:200,remaining:0})]},
+  {accountId:'a',date:'2026-11-05',status:'submitted',entries:[entry('q',{budget:900,remaining:900})]}
+ ];
+ const db={reports,products:[{id:'p',name:'P'},{id:'q',name:'Q'}],orders:[],targets:[]};
+ const s=productSummary(db,['2026-11-02','2026-11-02']);
+ assert.equal(s.columns[0].remaining,300);assert.equal(s.columns[1].remaining,40);assert.equal(s.total.remaining,340);
+ assert.equal(productSummary(db,['2026-11-04','2026-11-04'],'a').total.remaining,40);
+ assert.equal(productSummary(db,['2026-11-02','2026-11-02'],'b','p').total.remaining,100);
+});

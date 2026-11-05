@@ -11,7 +11,7 @@ export default function DragScroll({children,className='',...props}){
   window.addEventListener('blur',blur);window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',stop);window.addEventListener('pointercancel',stop);
   return()=>{window.removeEventListener('blur',blur);window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',stop);window.removeEventListener('pointercancel',stop);};
  },[]);
- return <div aria-label="Bảng đơn hàng, giữ chuột trái và kéo để cuộn ngang" {...props} ref={node} tabIndex={0} className={'table-scroll drag-scroll '+className} onPointerDown={e=>{
+ return <div aria-label="Giữ chuột trái và kéo để cuộn ngang" {...props} ref={node} tabIndex={0} className={'table-scroll drag-scroll '+className} onPointerDown={e=>{
   suppressClick.current=false;if(e.pointerType!=='mouse'||e.button!==0||e.target.closest('button,a,input,select,textarea,label,[role="button"]')||e.currentTarget.scrollWidth<=e.currentTarget.clientWidth)return;
   drag.current={id:e.pointerId,x:e.clientX,y:e.clientY,left:e.currentTarget.scrollLeft,active:false};
  }} onDragStart={e=>{if(drag.current)e.preventDefault();}} onClickCapture={e=>{if(suppressClick.current){e.preventDefault();e.stopPropagation();suppressClick.current=false;}}}>{children}</div>;

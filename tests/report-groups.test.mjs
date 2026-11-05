@@ -29,3 +29,12 @@ test('Unified report retains orders on dates or accounts without advertising rep
  const unified=combinedReportDb(db,groups);assert.equal(unified.reports.length,db.reports.length);assert.equal(unified.orders.filter(o=>o.id==='extra1').length,1);assert.ok(unified.reports.every(r=>r.status==='submitted'));
  assert.equal(groups.reduce((n,g)=>n+g.total.data,0),140);assert.equal(groups.reduce((n,g)=>n+g.total.spend,0),2450);
 });
+
+test('Unified product totals retain prior balances on days without new reports',()=>{
+ const db=data();db.assignments=[{accountId:'a',productId:'p',active:true},{accountId:'a',productId:'q',active:true}];db.accounts[0].active=true;db.accounts[0].role='user';
+ const selectedRange=['2026-11-03','2026-11-03'];
+ const groups=reportGroups(db,[],selectedRange,'all',{includeAccounts:true});
+ assert.equal(groups.find(g=>g.accountId==='a').remaining,400);
+ const combined=combinedReportDb(db,groups);
+ assert.equal(combined.reports.length,0);assert.equal(combined.balanceReports.length,2);
+});
