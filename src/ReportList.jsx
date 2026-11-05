@@ -13,10 +13,13 @@ import {reportPolicy} from './report-policy.js';
 import {useWorkspaceState} from './WorkspaceState.jsx';
 const formatDate=d=>d.split('-').reverse().join('/');
 const formatTime=d=>d?new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}).format(new Date(d)):'Chưa gửi';
-export default function ReportList({db,user,mutate,notify,busy,onOpen,FilterComponent,initialView,onViewChange,dirtyRef,SummaryComponent,onCreate,onOrders}){
+export default function ReportList({db,user,mutate,notify,busy,onOpen,FilterComponent,initialView,onViewChange,dirtyRef,SummaryComponent,onCreate,onOrders,route,onRouteChange}){
  const today=user.role==='admin'?previousDay():dayString();
- const [filter,setFilter]=useWorkspaceState('reports.filter',initialView?.filter||{mode:user.role==='admin'?'day':'month',date:today,from:today.slice(0,7)+'-01',to:today,month:today.slice(0,7),account:user.role==='admin'?'all':user.id,product:'all'}),[view,setView]=useWorkspaceState('reports.view',initialView?.view||'accounts'),[selectedAccount,setSelectedAccount]=useWorkspaceState('reports.selectedAccount',initialView?.selectedAccount||null),[editing,setEditing]=useWorkspaceState('reports.editing',null),[newDate,setNewDate]=useWorkspaceState('reports.newDate',''),[history,setHistory]=useState(null);
- const [inlineDay,setInlineDay]=useWorkspaceState('reports.inlineDay',initialView?.inlineDay||''),[inlineDirty,setInlineDirty]=useState(false);
+ const [filter,setFilter]=useWorkspaceState('reports.filter',initialView?.filter||{mode:user.role==='admin'?'day':'month',date:today,from:today.slice(0,7)+'-01',to:today,month:today.slice(0,7),account:user.role==='admin'?'all':user.id,product:'all'}),[view,setView]=useWorkspaceState('reports.view',initialView?.view||'accounts'),[storedAccount,setStoredAccount]=useWorkspaceState('reports.selectedAccount',initialView?.selectedAccount||null),[editing,setEditing]=useWorkspaceState('reports.editing',null),[newDate,setNewDate]=useWorkspaceState('reports.newDate',''),[history,setHistory]=useState(null);
+ const [storedDay,setStoredDay]=useWorkspaceState('reports.inlineDay',initialView?.inlineDay||''),[inlineDirty,setInlineDirty]=useState(false);
+ const selectedAccount=route?route.employee:storedAccount,inlineDay=route?route.day:storedDay;
+ const setSelectedAccount=value=>{setStoredAccount(value);onRouteChange?.({...route,page:'overview',employee:value,day:null});};
+ const setInlineDay=value=>{setStoredDay(value);onRouteChange?.({...route,page:'overview',day:value},{replace:true});};
  const updateDirty=useCallback(value=>{setInlineDirty(value);if(dirtyRef)dirtyRef.current=value;},[dirtyRef]);
  function leave(action){updateDirty(false);action();}
  const editPolicy=reportPolicy(db.reports,editing?.accountId);
@@ -27,7 +30,7 @@ export default function ReportList({db,user,mutate,notify,busy,onOpen,FilterComp
  const groups=reportGroups(scopedDb,reports,range,filter.product,{includeOrderOnly:true,includeAccounts:true}),summaryDb=combinedReportDb(scopedDb,groups),selected=groups.find(g=>g.accountId===selectedAccount);
  const inlineRecord=selected?.reports.find(r=>r.id===inlineDay)||selected?.reports[0];
  useEffect(()=>{onViewChange?.({filter,view,selectedAccount,inlineDay});},[filter,view,selectedAccount,inlineDay,onViewChange]);
- function changeFilter(next){leave(()=>{setSelectedAccount(null);setFilter(next);setInlineDay('');});}
+ function changeFilter(next){leave(()=>{setStoredAccount(null);setStoredDay('');setFilter(next);onRouteChange?.({...route,page:'overview',employee:null,day:null},{replace:true});});}
  return <><div className="page-heading"><div><div className="eyebrow">BÁO CÁO KINH DOANH</div><h1>{selected?"Báo cáo của "+selected.ownerName:"Báo cáo"}</h1><p>{selected?"Tổng hợp từng sản phẩm và các bảng theo ngày.":"Tổng hợp doanh thu, ngân sách và báo cáo từng nhân viên trong cùng một nơi."}</p></div><div className="report-heading-actions">{!selected&&user.role!=='admin'&&onCreate&&<ActionButton className="btn primary" onClick={onCreate}><Plus size={16}/> Điền báo cáo</ActionButton>}{selected&&<ActionButton className="btn" onClick={()=>leave(()=>setSelectedAccount(null))}><ArrowLeft size={16}/> Quay lại danh sách</ActionButton>}<span className="tag">{selected?selected.reports.length:reports.length} bảng · {selected?1:groups.length} nhân viên</span></div></div><FilterComponent {...{db,user,filter,setFilter:changeFilter}} calendarAccount={selected?.accountId}/><WindowGate range={range}><div className="report-list-controls"><p>Đủ số liệu báo cáo đã lưu và đơn hàng theo bộ lọc · Ngày chưa gửi có chấm đỏ · Đơn bùng không tính doanh thu</p>{!selected&&SummaryComponent&&<div className="segmented" aria-label="Cách xem báo cáo">{[['accounts','Theo nhân viên'],['products','Theo sản phẩm']].map(([id,label])=><ActionButton className={view===id?'selected':''} key={id} onClick={()=>setView(id)}>{label}</ActionButton>)}</div>}</div>
  {!selected&&SummaryComponent&&<SummaryComponent db={summaryDb} user={user} filter={filter}/>}
  {selected?<>
