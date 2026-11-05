@@ -96,3 +96,13 @@ Chưa có thao tác push GitHub hay triển khai Vercel vào tài khoản của 
 - Sau mốc đầu: phải gửi từng ngày trước khi nhập ngày sau; bản nháp chưa được tính. Ngày không phát sinh vẫn gửi đủ các ô số 0.
 - Có lịch sử từ trước cửa sổ 7 ngày: bổ sung ngày thiếu từ đầu cửa sổ, không phải bổ sung toàn bộ lịch sử.
 - Admin được sửa báo cáo lịch sử đã có. Sửa số dư sẽ tính lại các báo cáo sau, tăng phiên bản và ghi lịch sử; nếu số dư sau vượt ngân sách thì từ chối lưu, không âm thầm ghi sai.
+
+Địa chỉ production chính của người dùng: https://quanlybaocao.vercel.app
+
+### Báo cáo hợp nhất và phân phối khi tạo sản phẩm
+
+- Menu chỉ còn Báo cáo, tích hợp tổng quan, biểu đồ mở bằng modal, xuất CSV, xem theo nhân viên hoặc sản phẩm. Một bộ lọc dùng chung cho toàn bộ số liệu.
+- Không có nút Lưu nháp hay bộ lọc bản nháp trong giao diện. Gửi báo cáo mới và lưu chỉnh sửa đều là bản chính thức. Dữ liệu nháp cũ được giữ và cộng đủ, hiển thị Chưa gửi đến khi người dùng gửi chính thức; không tự xóa hoặc tự xác nhận.
+- Vẫn tính đơn hàng khi chưa có báo cáo quảng cáo; đơn bùng không tính, đơn chia quy đổi 0,5. Tổng và tỷ lệ đều dùng chung nguồn dữ liệu.
+- Khi thêm sản phẩm đơn lẻ hoặc nhiều dòng, tick nhân viên để phân phối ngay. Backend kiểm tra tất cả nhân viên trước khi ghi và hỗ trợ retry với ID ổn định nếu việc ghi sản phẩm/phân phối bị gián đoạn.
+- Bản cập nhật này cần cập nhật Code.gs và triển khai Phiên bản mới trước khi cập nhật frontend. Giữ nguyên config và URL API.

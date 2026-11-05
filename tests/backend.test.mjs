@@ -240,3 +240,25 @@ test('Admin corrects old balances with an audit trail and recomputes subsequent 
  const future=result.data.reports.find(r=>r.id==='old2');assert.equal(future.entries[0].carryover,40);assert.equal(future.entries[0].budget,140);assert.equal(future.revision,2);
  assert.ok(result.data.audit.some(a=>a.action==='carryoverRecomputed'));
 });
+
+test('Admin creates a product and selected employee assignments in one retriable request',()=>{
+ const {postV2,c}=runtime(),payload={name:'Assigned product',priceUsd:129,rate:22500,accountIds:['a','b']},requestId='product_assign_retry_123456';
+ const r=postV2('saveProduct',payload,'token-admin',requestId);assert.equal(r.ok,true);const product=r.data.upsert.products[0];assert.equal(r.data.upsert.assignments.length,2);assert.deepEqual(r.data.upsert.assignments.map(a=>a.accountId).sort(),['a','b']);assert.ok(r.data.upsert.assignments.every(a=>a.productId===product.id&&a.active));
+ assert.equal(postV2('saveProduct',payload,'token-admin',requestId).ok,true);assert.equal(c.read_('Products').filter(p=>p.name===payload.name).length,1);assert.equal(c.read_('Assignments').filter(a=>a.productId===product.id).length,2);
+});
+test('Invalid employee selection rejects the product and assignments before staging writes',()=>{
+ const {postV2,c}=runtime();for(const accountIds of [['admin'],['missing'],['a','a']]){const r=postV2('saveProduct',{name:'Rejected selection',priceUsd:10,rate:22500,accountIds},'token-admin');assert.equal(r.ok,false);assert.equal(c.read_('Products').some(p=>p.name==='Rejected selection'),false);}
+ assert.equal(postV2('saveProduct',{name:'Forbidden',priceUsd:10,rate:22500,accountIds:['b']}).ok,false);
+});
+test('Product bulk validates all employee selections before saving any row',()=>{
+ const {postV2,c}=runtime();const rows=[{name:'Bulk selected A',priceUsd:10,rate:22500,accountIds:['a']},{name:'Bulk selected B',priceUsd:20,rate:22500,accountIds:['admin']}];
+ assert.equal(postV2('saveProductsBulk',{rows,batchId:'bulk_assign_test_001'},'token-admin').ok,false);assert.equal(c.read_('Products').some(p=>p.name.startsWith('Bulk selected')),false);
+ rows[1].accountIds=['b'];const saved=postV2('saveProductsBulk',{rows,batchId:'bulk_assign_test_002'},'token-admin');assert.equal(saved.ok,true);assert.equal(saved.data.upsert.products.length,2);assert.equal(saved.data.upsert.assignments.length,2);
+});
+
+test('Retry repairs an interrupted product assignment save without duplicating or overwriting employees',()=>{
+ const {postV2,c,fault}=runtime(),payload={name:'Recovered product',priceUsd:129,rate:22500,accountIds:['a','b']},key='product_assignment_repair_001';
+ fault.table='SL_Assignments';assert.equal(postV2('saveProduct',payload,'token-admin',key).code,'SERVER_ERROR');
+ const retry=postV2('saveProduct',payload,'token-admin',key);assert.equal(retry.ok,true);
+ const products=c.read_('Products').filter(p=>p.name===payload.name);assert.equal(products.length,1);const assignments=c.read_('Assignments').filter(a=>a.productId===products[0].id);assert.equal(assignments.length,2);assert.deepEqual(assignments.map(a=>a.accountId).sort(),['a','b']);
+});

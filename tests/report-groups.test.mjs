@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reportGroups} from '../src/report-groups.js';
+import {reportGroups,combinedReportDb} from '../src/report-groups.js';
 const range=['2026-11-01','2026-11-04'];
 function data(){return {accounts:[{id:'a',ownerName:'Trúc'},{id:'b',ownerName:'Ninh'}],products:[{id:'p',name:'Toma'},{id:'q',name:'Mụn'}],targets:[],
  reports:[{id:'r1',accountId:'a',date:'2026-11-01',status:'submitted',entries:[{productId:'p',budget:1000,remaining:400,data:10}]},
@@ -21,4 +21,11 @@ test('Product and status filters affect both report totals and matching order re
 });
 test('Carry context rows do not create employee cards or inflate report totals',()=>{
  const db=data();assert.equal(reportGroups(db,[{...db.reports[0],_carryContext:true}],range).length,0);
+});
+
+test('Unified report retains orders on dates or accounts without advertising reports',()=>{
+ const db=data();db.orders.push({id:'extra1',accountId:'a',productId:'p',date:'2026-11-02',type:'sale',amountVnd:2000},{id:'extra2',accountId:'c',productId:'q',date:'2026-11-03',type:'care',amountVnd:700});
+ const groups=reportGroups(db,db.reports,range,'all',{includeOrderOnly:true}),a=groups.find(g=>g.accountId==='a'),c=groups.find(g=>g.accountId==='c');assert.equal(a.total.revenue,3000);assert.equal(c.total.care,700);assert.equal(c.reports.length,0);
+ const unified=combinedReportDb(db,groups);assert.equal(unified.reports.length,db.reports.length);assert.equal(unified.orders.filter(o=>o.id==='extra1').length,1);assert.ok(unified.reports.every(r=>r.status==='submitted'));
+ assert.equal(groups.reduce((n,g)=>n+g.total.data,0),140);assert.equal(groups.reduce((n,g)=>n+g.total.spend,0),2450);
 });

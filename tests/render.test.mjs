@@ -31,6 +31,16 @@ test('Report list displays one card per employee and employee detail retains bac
  const filter={mode:'range',from:range[0],to:range[1],date:range[0],month:range[0].slice(0,7),account:'all',product:'all'};
  const render=selectedAccount=>renderToString(React.createElement(ui.DataWindow.Provider,{value:{scope:{from:range[0],to:range[1]},ensure(){}}},React.createElement(ui.ReportList,{...base,user:admin,FilterComponent:ui.Filters,onOpen(){},initialView:{filter,status:'all',selectedAccount}})));
  const cards=render(null);assert.ok(cards.includes('employee-report-grid'));assert.equal((cards.match(/aria-label="Xem báo cáo chi tiết của /g)||[]).length,3);assert.equal(cards.includes('table-scroll'),false);
- const detail=render('u1');assert.ok(detail.includes('Quay lại danh sách'));assert.ok(detail.includes('Tổng kết theo sản phẩm'));assert.ok(detail.includes('Các bảng theo ngày'));assert.ok(detail.includes('Lịch sử sửa'));assert.ok(detail.includes('Sửa ngày'));
+ const detail=render('u1');assert.ok(detail.includes('Quay lại danh sách'));assert.ok(detail.includes('Chi tiết theo sản phẩm'));assert.equal(detail.includes('employee-report-detail'),false);assert.ok(detail.includes('Lưu thay đổi'));assert.ok(detail.includes('Sửa Tổng data'));assert.ok(detail.includes('Các bảng theo ngày'));assert.ok(detail.includes('Lịch sử sửa'));assert.ok(detail.includes('Sửa ngày'));
  const daily=renderToString(React.createElement(ui.Daily,{...base,user:admin,initial:db.reports[0],onBack(){}}));assert.ok(daily.includes('Quay lại'));assert.ok(daily.includes('báo cáo nhân viên'));
+});
+
+test('Unified report has one navigation entry, one filter and no draft workflow',()=>{
+ const tab=new Map([['so-lieu.session',JSON.stringify({token:'reload-token',user:{id:'reload-user'}})]]);
+ globalThis.sessionStorage={getItem:k=>tab.get(k)||null,removeItem:k=>tab.delete(k)};storage.set('so-lieu.ui-user',JSON.stringify({id:'reload-user',ownerName:'Trúc',role:'user'}));
+ try{const html=renderToString(React.createElement(ui.App)),nav=html.match(/<nav>([\s\S]*?)<\/nav>/)[1];assert.equal((nav.match(/>Báo cáo</g)||[]).length,1);assert.equal(nav.includes('Tổng quan'),false);}
+ finally{delete globalThis.sessionStorage;storage.clear();}
+ const filter={mode:'month',month:previousDay().slice(0,7),account:'all',product:'all'};
+ const html=renderToString(React.createElement(ui.ReportList,{...base,user:admin,SummaryComponent:ui.Overview,FilterComponent:ui.Filters,onOpen(){},initialView:{filter}}));
+ assert.equal((html.match(/class="filterbar"/g)||[]).length,1);assert.ok(html.includes('Xem biểu đồ'));assert.ok(html.includes('Theo sản phẩm'));assert.ok(html.includes('employee-report-grid'));assert.equal(html.includes('Bản nháp'),false);assert.equal(html.includes('Lưu nháp'),false);assert.equal(html.includes('Hiệu suất chi tiết'),false);
 });

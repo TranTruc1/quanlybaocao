@@ -1,15 +1,24 @@
-import {aggregate,divide,productSummary} from './domain.js';
+import {aggregate,divide,productSummary,inRange} from './domain.js';
 
-// Report list includes drafts intentionally; it is distinct from posted dashboard totals.
-export function reportGroups(db,reports,range,product='all'){
+// All unified views use the same report/status/product scope. Drafts are explicit.
+export function reportGroups(db,reports,range,product='all',options={}){
  const byAccount=new Map();
  for(const r of reports){if(r._carryContext)continue;if(!byAccount.has(r.accountId))byAccount.set(r.accountId,[]);byAccount.get(r.accountId).push(r);}
+ const eligibleOrders=db.orders.filter(o=>!o.isBounced&&inRange(o.date,range)&&(product==='all'||o.productId===product));
+ if(options.includeOrderOnly)for(const o of eligibleOrders)if(!byAccount.has(o.accountId))byAccount.set(o.accountId,[]);
+ if(options.includeAccounts){
+  for(const t of db.targets||[])if(t.month>=range[0].slice(0,7)&&t.month<=range[1].slice(0,7)&&(product==='all'||t.productId===product)&&!byAccount.has(t.accountId))byAccount.set(t.accountId,[]);
+  for(const a of db.assignments||[])if(a.active&&(product==='all'||a.productId===product)&&db.accounts.some(u=>u.id===a.accountId&&u.active&&u.role==='user')&&!byAccount.has(a.accountId))byAccount.set(a.accountId,[]);
+ }
  return [...byAccount].map(([accountId,items])=>{
   const dates=new Set(items.map(r=>r.date));
   const ids=new Set(items.flatMap(r=>r.entries.filter(e=>product==='all'||e.productId===product).map(e=>e.productId)));
+  if(options.includeOrderOnly)eligibleOrders.filter(o=>o.accountId===accountId).forEach(o=>ids.add(o.productId));
+  for(const t of db.targets||[])if(t.accountId===accountId&&t.month>=range[0].slice(0,7)&&t.month<=range[1].slice(0,7)&&(product==='all'||t.productId===product))ids.add(t.productId);
+  for(const a of db.assignments||[])if(a.active&&a.accountId===accountId&&(product==='all'||a.productId===product))ids.add(a.productId);
   const scoped={...db,products:db.products.filter(p=>ids.has(p.id)),
    reports:items.map(r=>({...r,status:'submitted',_normalized:true,entries:r.entries.filter(e=>ids.has(e.productId))})),
-   orders:db.orders.filter(o=>o.accountId===accountId&&dates.has(o.date)&&ids.has(o.productId))};
+   orders:db.orders.filter(o=>o.accountId===accountId&&(options.includeOrderOnly?inRange(o.date,range):dates.has(o.date))&&ids.has(o.productId))};
   const stats=aggregate(scoped,range,accountId,product),summary=productSummary(scoped,range,accountId,product);
   const balances=new Map();
   [...items].sort((a,b)=>a.date.localeCompare(b.date)).forEach(r=>r.entries.filter(e=>ids.has(e.productId)).forEach(e=>balances.set(e.productId,Number(e.remaining||0))));
@@ -20,3 +29,5 @@ export function reportGroups(db,reports,range,product='all'){
    averageSpend:divide(stats.total.spend,dates.size),averageData:divide(stats.total.data,dates.size)};
  }).sort((a,b)=>a.ownerName.localeCompare(b.ownerName,'vi'));
 }
+
+export function combinedReportDb(db,groups){return {...db,reports:groups.flatMap(g=>g.db.reports),orders:groups.flatMap(g=>g.db.orders)};}

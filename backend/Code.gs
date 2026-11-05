@@ -106,16 +106,16 @@ function mutate_(action,p,user){
     if(!Array.isArray(p.rows)||p.rows.length<1||p.rows.length>50||typeof p.batchId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(p.batchId))throw applicationError_('Lô không hợp lệ; tối đa 50 dòng.');
     var fingerprint=sha_(JSON.stringify(p.rows));var saved=read_('Audit').find(function(a){return a.actorId===user.id&&a.action==='batchSaved'&&a.details.batchId===p.batchId;});
     if(saved){if(saved.details.fingerprint!==fingerprint)throw applicationError_('Lô này đã lưu với nội dung khác. Tải lại danh sách trước khi tạo lô mới.');return;}
-    var seenNames=Object.create(null);var records=p.rows.map(function(row,index){
-      try{if(row.id)throw applicationError_('Lô chỉ dùng thêm mới.');var record=productBatch?prepareProduct_(row,user):prepareOrder_(row,user);if(productBatch){var name=record.name.toLowerCase();if(seenNames[name])throw applicationError_('Tên sản phẩm trùng trong lô.');seenNames[name]=true;}return record;}
+    var assignmentPlans=[],seenNames=Object.create(null);var records=p.rows.map(function(row,index){
+      try{if(row.id)throw applicationError_('Lô chỉ dùng thêm mới.');var record=productBatch?prepareProduct_(row,user):prepareOrder_(row,user);if(productBatch){assignmentPlans=assignmentPlans.concat(prepareProductAssignments_(row,record.id));var name=record.name.toLowerCase();if(seenNames[name])throw applicationError_('Tên sản phẩm trùng trong lô.');seenNames[name]=true;}return record;}
       catch(e){throw Object.assign(new Error('Dòng '+(index+1)+': '+e.message),{code:e.code});}
     });
-    records.forEach(function(r){put_(productBatch?'Products':'Orders',r);});
+    records.forEach(function(r){put_(productBatch?'Products':'Orders',r);});assignmentPlans.forEach(function(a){put_('Assignments',a);});
     audit_(user.id,'batchSaved',{batchId:p.batchId,fingerprint:fingerprint,count:records.length,table:productBatch?'Products':'Orders'});
   } else if(action==='deleteOrder') {
     var o=get_('Orders',p.id);if(!o)throw applicationError_('Không tìm thấy đơn.');if(user.role!=='admin'&&o.accountId!==user.id)throw applicationError_('Không có quyền xóa đơn.');remove_('Orders',p.id);
   } else if(action==='saveProduct') {
-    put_('Products',prepareProduct_(p,user));
+    var product=prepareProduct_(p,user),assignments=prepareProductAssignments_(p,product.id);put_('Products',product);assignments.forEach(function(a){put_('Assignments',a);});
   } else if(action==='saveAccount') {
     admin_(user);var old=p.id?get_('Accounts',p.id):null;if(p.id&&!old)throw applicationError_('Không tìm thấy account.');
     if(old&&old.deletedAt)throw applicationError_('Khôi phục account trước khi chỉnh sửa.');checkAccount_(p,!old);if(old&&Number(p.revision||0)!==Number(old.revision||0))throw conflict_();var username=String(p.username).trim();
@@ -329,7 +329,22 @@ function prepareOrder_(p,user){
 }
 function prepareProduct_(p,user){
     admin_(user);var name=String(p.name||'').trim();if(!name||name.length>100)throw applicationError_('Tên sản phẩm chưa hợp lệ.');var price=num_(p.priceUsd,false),rate=num_(p.rate,false);if(price<=0||rate<=0)throw applicationError_('Giá và tỷ giá phải lớn hơn 0.');
-    if(read_('Products').some(function(x){return x.name.toLowerCase()===name.toLowerCase()&&x.id!==p.id;}))throw applicationError_('Tên sản phẩm đã tồn tại.');
-    var old=p.id?get_('Products',p.id):null;if(p.id&&!old)throw applicationError_('Không tìm thấy sản phẩm.');if(old&&Number(p.revision||0)!==Number(old.revision||0))throw conflict_();
-    return {id:p.id||newId_(),revision:(old?old.revision||0:0)+1,name:name,priceUsd:price,rate:rate,active:p.active!==false,color:/^#[0-9a-fA-F]{6}$/.test(p.color)?p.color:'#18765c',updatedAt:now_()};
+    var productId=p.id||newId_(),old=get_('Products',productId),active=p.active!==false,color=/^#[0-9a-fA-F]{6}$/.test(p.color)?p.color:'#18765c';
+    if(read_('Products').some(function(x){return x.name.toLowerCase()===name.toLowerCase()&&x.id!==productId;}))throw applicationError_('Tên sản phẩm đã tồn tại.');
+    if(p.id&&!old)throw applicationError_('Không tìm thấy sản phẩm.');if(p.id&&old&&Number(p.revision||0)!==Number(old.revision||0))throw conflict_();
+    if(!p.id&&old){if(old.name!==name||old.priceUsd!==price||old.rate!==rate||old.active!==active||old.color!==color)throw conflict_();return old;}
+    return {id:productId,revision:(old?old.revision||0:0)+1,name:name,priceUsd:price,rate:rate,active:active,color:color,updatedAt:now_()};
+}
+
+// Validate the entire employee selection before any staged product/assignment writes.
+function prepareProductAssignments_(payload,productId){
+ if(payload.accountIds===undefined)return [];
+ if(!Array.isArray(payload.accountIds)||payload.accountIds.length>500)throw applicationError_('Danh sách nhân viên không hợp lệ.');
+ var seen=Object.create(null),existing=read_('Assignments');
+ return payload.accountIds.map(function(id){
+  if(typeof id!=='string'||seen[id])throw applicationError_('Nhân viên bị trùng hoặc ID không hợp lệ.');seen[id]=true;
+  var a=get_('Accounts',id);if(!a||a.role!=='user'||!a.active||a.deletedAt)throw applicationError_('Nhân viên đã bị xóa, khóa hoặc không phải user. Tải lại danh sách nhân viên.');
+  var candidateId=newId_(),old=existing.find(function(x){return x.accountId===id&&x.productId===productId;});
+  return {id:old?old.id:candidateId,accountId:id,productId:productId,active:true,updatedAt:now_()};
+ });
 }

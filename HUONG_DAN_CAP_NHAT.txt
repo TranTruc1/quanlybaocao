@@ -1,28 +1,28 @@
-BẢN CẬP NHẬT THẺ BÁO CÁO VÀ NHẬP TUẦN TỰ
+BÁO CÁO HỢP NHẤT + PHÂN PHỐI SẢN PHẨM
+Web chính: https://quanlybaocao.vercel.app
 
-1. Giải nén, chép đè đúng các thư mục vào dự án hiện tại.
-2. Không có file config trong gói. Giữ nguyên URL API trên Vercel.
-3. Cập nhật backend/Code.gs vào dự án Apps Script hiện tại.
-   Triển khai > Quản lý các bản triển khai > Sửa (bút chì) > Phiên bản mới > Triển khai.
-   Dùng lại deployment hiện tại để giữ URL /exec. Không chạy setup hay khởi tạo lại tài khoản.
-4. Chạy:
+1. Giải nén và chép đè đúng thư mục vào dự án hiện tại.
+2. Cập nhật backend/Code.gs trên Apps Script TRƯỚC frontend:
+   Triển khai > Quản lý các bản triển khai > Bút chì > Phiên bản mới > Triển khai.
+   Giữ nguyên deployment để URL /exec không đổi. Không chạy setup hay khởi tạo lại tài khoản.
+3. Chạy:
    npm test
    npm run build
    git add .
-   git commit -m "The bao cao nhan vien va nhap tuan tu 7 ngay"
+   git commit -m "Hop nhat bao cao va phan phoi nhan vien khi tao san pham"
    git push origin main
+4. Vercel tự build nếu repo đã liên kết.
 
-TÍNH NĂNG
-- Danh sách bảng: mỗi nhân viên một thẻ tổng hợp theo bộ lọc ngày/sản phẩm/trạng thái.
-- Bấm thẻ để xem chi tiết sản phẩm và các bảng từng ngày; Mở / Sửa bảng giữ form cũ.
-- Quay lại giữ bộ lọc và nhân viên đã chọn. Cảnh báo nếu rời bảng có thay đổi chưa lưu.
-- User nhập/sửa trong 7 ngày gần nhất tính đến hôm qua, theo giờ Việt Nam.
-- Chưa có dữ liệu: được bắt đầu ngay tại ngày chọn trong khoảng trên, không bắt điền bù trước mốc đầu.
-- Sau mốc đầu: ngày trước phải gửi xong mới nhập ngày sau. Lưu nháp chưa tính; báo cáo toàn 0 được gửi.
-- Đã có lịch sử lâu hơn 7 ngày: bổ sung ngày thiếu trong cửa sổ 7 ngày, không bắt điền lại toàn bộ lịch sử.
-- Admin được sửa báo cáo cũ; máy chủ tính lại ngân sách chuyển dư các ngày sau và ghi Audit.
-- Nếu sửa số dư cũ khiến số dư ngày sau vượt ngân sách thì từ chối lưu và báo ngày cần kiểm tra.
-- Thẻ có tổng và trung bình/ngày có bảng. Bao gồm bản nháp nếu bộ lọc chọn bản nháp hoặc tất cả.
-- Đơn hàng lấy từ bảng Orders theo ngày có báo cáo và sản phẩm đang lọc; đơn bùng không tính, đơn chia tính 0,5.
+Gói KHÔNG có config. Không đổi API URL hoặc tài khoản/mật khẩu.
 
-Đã kiểm tra 90 bài test và build production. Gói không sửa cấu hình hay tài khoản/mật khẩu.
+- Chỉ còn một menu Báo cáo; tổng, trung bình, biểu đồ, xuất CSV và chi tiết dùng chung bộ lọc.
+- Chọn Theo nhân viên hoặc Theo sản phẩm, không cần hai trang tổng hợp trùng nhau.
+- Giữ đủ ngân sách/data của báo cáo cũ chưa gửi, hiển thị Chưa gửi. Đơn hàng vẫn tính kể cả chưa có báo cáo quảng cáo.
+- Không còn nút Lưu nháp/bộ lọc nháp. Gửi báo cáo mới hoặc lưu chỉnh sửa đều gửi chính thức.
+- Bản nháp cũ được giữ, không tự xóa hay tự xác nhận. Người dùng bấm Gửi báo cáo để xác nhận.
+- Nhân viên chỉ được xem dữ liệu được phân phối như trước; quy tắc ngày và kiểm tra quyền vẫn giữ.
+- Tạo sản phẩm đơn lẻ hoặc nhiều dòng: tick nhân viên để phân phối ngay trong cùng request.
+- Backend kiểm tra đầy đủ nhân viên và hỗ trợ retry nếu lưu phân phối bị gián đoạn, tránh trùng sản phẩm/ghi đè nhân viên.
+- Chỉ các nhân viên active, role user được chọn. Không tick ai thì sản phẩm chưa được giao.
+
+Kiểm tra: 99 bài test đạt, đối chiếu số tổng/bảng sản phẩm trên trình duyệt và thao tác chọn hai nhân viên khi tạo sản phẩm. Build production được chạy trước khi gửi.
