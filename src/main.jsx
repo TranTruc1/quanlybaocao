@@ -18,7 +18,7 @@ import WindowGate,{DataWindow} from './DataWindow.jsx';
 import {containsRange,validRange,mergeDelta} from './data-window.js';
 import {restoreSession,persistSession,forgetSession} from './session.js';
 import {reportPolicy} from './report-policy.js';
-const nav=[['overview','Tổng quan',LayoutDashboard],['daily','Bảng điền hằng ngày',ClipboardPenLine],['submissions','Danh sách bảng',FileText],['orders','Đơn hàng',ShoppingBag],['targets','Mục tiêu tháng',Target],['products','Sản phẩm',Package],['accounts','Account & phân phối',Users]];
+const nav=[['overview','Tổng quan',LayoutDashboard],['daily','Bảng điền hằng ngày',ClipboardPenLine],['submissions','Báo cáo',FileText],['orders','Đơn hàng',ShoppingBag],['targets','Mục tiêu tháng',Target],['products','Sản phẩm',Package],['accounts','Account & phân phối',Users]];
 const number=n=>money(n);const inputNum=v=>Number(String(v).replace(/[^0-9.]/g,''))||0;
 function Brand(){return <div className="brand"><span className="brand-icon"><Leaf size={22}/></span><span>Sổ Liệu<span className="brand-dot">.</span></span></div>}
 function App(){
