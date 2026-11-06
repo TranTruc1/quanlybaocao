@@ -1,0 +1,19 @@
+BẢN CẬP NHẬT BÁO CÁO TUẦN – MKT VÀ SALE
+
+- Nhập 7 ngày từ thứ Hai đến Chủ nhật, 2 bảng mỗi hàng trên máy tính; điện thoại 1 bảng mỗi hàng.
+- Bảng thứ 8 là tổng tuần. Chọn tháng và tuần 1, 2, 3... Tháng có thể gồm 5 hoặc 6 tuần lịch; các tuần giao tháng vẫn đủ 7 ngày.
+- Lưu từng bảng ngày riêng. Bản nhập chưa lưu được giữ khi F5. Tổng tuần có đánh dấu nếu gồm dữ liệu chưa lưu.
+- Giữ công thức, số liệu, điều kiện nhập tuần tự, phân quyền và luồng MKT/SALE hiện tại.
+- Xem báo cáo mở tổng tháng trước; chuyển sang Ngày / Dải ngày và Ngày gần nhất / Chi tiết từng ngày cho cả MKT và SALE.
+- SALE có thanh lưu, hủy thay đổi và lịch sử tương tự MKT. Admin có một nút Thêm / Yêu cầu báo cáo; có thể gửi yêu cầu nhiều ngày cùng lúc.
+- Admin bị chặn đổi ngày báo cáo ở giao diện và API. MKT/SALE tự sửa ngày của mình theo điều kiện hiện có sau khi nhận yêu cầu.
+- Đã xóa các dòng tiêu đề và hướng dẫn thừa được yêu cầu.
+- Có Ghi nhớ đăng nhập 30 ngày. Không lưu mật khẩu.
+
+CẬP NHẬT:
+1. Chép đè nội dung trong thư mục quanlybaocao-nextjs vào dự án hiện tại. Giữ .env.local và .git của bạn.
+2. Đẩy thay đổi lên đúng nhánh GitHub đang liên kết Vercel.
+3. Vercel sẽ triển khai lại với cấu hình và biến môi trường đang có. Không cần nhập lại dữ liệu MongoDB.
+
+KIỂM TRA:
+Bộ kiểm tra tự động và production build được chạy trong môi trường phát triển. Không thay đổi dữ liệu trên website thật.

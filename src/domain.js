@@ -1,3 +1,4 @@
+import {appointmentCount} from './appointments.js';
 import {normalizeBudgets} from './budget-transfers.js';
 export const fields = [ ['budget','Ngân sách'],['remaining','Thừa cuối ngày'],['data','Tổng data'],['tt','Data tt'],['ktt','Data ktt'],['success','Đơn TC'],['upsale','Upsale'],['appointments','Đơn hẹn'],['late','Rep chậm'] ];
 export const money = n => new Intl.NumberFormat('vi-VN',{maximumFractionDigits:0}).format(Number(n)||0);
@@ -20,12 +21,15 @@ export function aggregate(db,range,account='all',product='all'){
  const get=(a,d,p)=>{const key=[a,d,p].join('|');if(!rows.has(key)) rows.set(key,{accountId:a,date:d,productId:p,budget:0,remaining:0,data:0,tt:0,ktt:0,success:0,upsale:0,appointments:0,late:0,spend:0,revenue:0,care:0,orderCount:0,careOnlyCount:0,upsaleRevenue:0,careOnlyRevenue:0,careOrderCount:0,submitted:false});return rows.get(key);};
  for(const r of reports)for(const e of r.entries){if(product!=='all'&&e.productId!==product)continue;const x=get(r.accountId,r.date,e.productId);for(const [k]of fields)if(!['success','upsale'].includes(k))x[k]+=Number(e[k]||0);x.spend+=netSpend(e);x.submitted=true;}
  for(const o of orders){const x=get(o.accountId,o.date,o.productId);x[isCareOrder(o)?'care':'revenue']+=Number(o.amountVnd||0);const weight=orderWeight(o);x.orderCount+=weight;if(isCareOrder(o))x.careOrderCount+=weight;else x.success+=weight;if(o.type==='upsale'){x.upsale+=weight;x.upsaleRevenue+=Number(o.amountVnd||0);}else if(isCareOrder(o)){x.careOnlyCount+=weight;x.careOnlyRevenue+=Number(o.amountVnd||0);}}
+ const saleAccount=account!=='all'&&db.accounts?.some(a=>a.id===account&&a.role==='sale'),managed=new Set();
+ for(const a of db.appointments||[]){const owner=saleAccount?a.saleAccountId:a.accountId;if(!owner||(account!=='all'&&owner!==account)||!inRange(a.date,range)||(product!=='all'&&a.productId!==product))continue;const key=owner+'|'+a.date+'|'+a.productId,row=get(owner,a.date,a.productId);if(!managed.has(key)){row.appointments=0;managed.add(key);}if(a.status==='pending')row.appointments++;}
  const detail=[...rows.values()].sort((a,b)=>b.date.localeCompare(a.date)||a.accountId.localeCompare(b.accountId));
- const total=detail.reduce((a,r)=>{for(const k of ['budget','remaining','data','tt','ktt','success','upsale','appointments','late','spend','revenue','care','orderCount','careOrderCount','careOnlyCount','upsaleRevenue','careOnlyRevenue'])a[k]=(a[k]||0)+r[k];return a;},{budget:0,remaining:0,data:0,tt:0,ktt:0,success:0,upsale:0,appointments:0,late:0,spend:0,revenue:0,care:0,orderCount:0,careOnlyCount:0,upsaleRevenue:0,careOnlyRevenue:0,careOrderCount:0});
+ detail.forEach(row=>{row.totalRevenue=row.revenue+row.care;});
+ const total=detail.reduce((a,r)=>{for(const k of ['budget','remaining','data','tt','ktt','success','upsale','appointments','late','spend','revenue','care','totalRevenue','orderCount','careOrderCount','careOnlyCount','upsaleRevenue','careOnlyRevenue'])a[k]=(a[k]||0)+r[k];return a;},{budget:0,remaining:0,data:0,tt:0,ktt:0,success:0,upsale:0,appointments:0,late:0,spend:0,revenue:0,care:0,totalRevenue:0,orderCount:0,careOnlyCount:0,upsaleRevenue:0,careOnlyRevenue:0,careOrderCount:0});
  const accountDays=new Set(detail.filter(r=>r.submitted).map(r=>r.accountId+'|'+r.date)).size;
  const days=new Set(detail.filter(r=>r.submitted).map(r=>r.date)).size;
  const averageTotal=detail.filter(r=>r.submitted).reduce((a,r)=>{for(const k of ['spend','data','success','revenue','care'])a[k]+=r[k];return a;},{spend:0,data:0,success:0,revenue:0,care:0});
- return {detail,total,averageTotal,accountDays,days,costPerData:divide(total.spend,total.data),costRatio:divide(total.spend,total.revenue)};
+ return {detail,total,averageTotal,accountDays,days,costPerData:divide(total.spend,total.data),costRatio:divide(total.spend,total.revenue+total.care)};
 }
 export function targetMath(t,p,month){const days=new Date(Number(month.slice(0,4)),Number(month.slice(5)),0).getDate();const price=Number(t?.priceUsd??p.priceUsd)*Number(t?.rate??p.rate);const orders=price>0?Math.ceil(Number(t?.revenue||0)/price):0;return {price,orders,perDay:orders/days,days};}
 
@@ -42,7 +46,7 @@ export function closingBalances(reports,end,account='all',product='all'){
 export function productSummary(db, range, account='all', product='all') {
  const stats=aggregate(db,range,account,product);
  const balances=closingBalances(db.balanceReports||db.reports,range[1],account,product);
- const keys=['spend','data','tt','ktt','success','upsale','revenue','care','orderCount','careOrderCount','careOnlyCount','upsaleRevenue','careOnlyRevenue'];
+ const keys=['spend','data','tt','ktt','success','upsale','revenue','care','totalRevenue','appointments','orderCount','careOrderCount','careOnlyCount','upsaleRevenue','careOnlyRevenue'];
  const empty=()=>Object.fromEntries([...keys,'goal','remaining'].map(k=>[k,0]));
  const products=db.products.filter(p=>product==='all'||p.id===product);
  const columns=products.map(p=>{
@@ -50,10 +54,10 @@ export function productSummary(db, range, account='all', product='all') {
   for(const row of stats.detail.filter(r=>r.productId===p.id))for(const k of keys)sums[k]+=row[k];
   sums.remaining=balances.filter(b=>b.productId===p.id).reduce((n,b)=>n+b.remaining,0);
   sums.goal=(db.targets||[]).filter(t=>t.productId===p.id&&(account==='all'||t.accountId===account)&&t.month>=range[0].slice(0,7)&&t.month<=range[1].slice(0,7)).reduce((v,t)=>v+Number(t.revenue||0),0);
-  return {id:p.id,label:p.name,...sums,costPerData:divide(sums.spend,sums.data),costRatio:divide(sums.spend,sums.revenue),achieved:divide(sums.revenue,sums.goal)};
+  return {id:p.id,label:p.name,...sums,costPerData:divide(sums.spend,sums.data),costRatio:divide(sums.spend,sums.revenue+sums.care),achieved:divide(sums.revenue,sums.goal)};
  });
  const total=columns.reduce((s,c)=>{for(const k of [...keys,'goal','remaining'])s[k]+=c[k];return s;},empty());
- return {columns,total:{id:'total',label:'Tổng SP',...total,costPerData:divide(total.spend,total.data),costRatio:divide(total.spend,total.revenue),achieved:divide(total.revenue,total.goal)}};
+ return {columns,total:{id:'total',label:'Tổng SP',...total,costPerData:divide(total.spend,total.data),costRatio:divide(total.spend,total.revenue+total.care),achieved:divide(total.revenue,total.goal)}};
 }
 
 export function summarizeTargets(db,account,month){

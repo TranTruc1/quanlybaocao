@@ -92,3 +92,15 @@ test('MKT saves transfers without approval and cannot split 900 into two transfe
  x.call('saveReport',{date,status:'submitted',revision:0,entries,transfers:[{fromProductId:'p',toProductId:'q',amount:600},{fromProductId:'p',toProductId:'r',amount:300}]},'u');
  const saved=x.rows('Reports').find(r=>r.date===date);assert.equal(saved.status,'submitted');assert.deepEqual(saved.entries.map(e=>e.budget),[0,600,300]);
 });
+test('Neither admin nor the owner can change report dates, including requested reports; history stays private',()=>{
+ const x=setup();x.call('saveReport',{accountId:'u',date:prior,status:'submitted',revision:0,entries:[entry('p'),entry('q'),entry('r')]});const report=x.rows('Reports')[0];
+ assert.throws(()=>x.call('changeReportDate',{id:report.id,date,revision:report.revision}),e=>e.code==='FORBIDDEN');
+ x.call('requestReport',{accountId:'u',date,kind:'correct',reason:'Sửa ngày'});assert.throws(()=>x.call('changeReportDate',{id:report.id,date,revision:report.revision},'u'),e=>e.code==='FORBIDDEN');assert.equal(x.rows('Reports')[0].date,prior);
+ assert.ok(Array.isArray(x.call('reportHistory',{id:report.id},'u').audit));assert.throws(()=>x.call('reportHistory',{id:report.id},'v'),e=>e.code==='FORBIDDEN');
+});
+test('Remembered login and cookie lifetime agree on 30 days while ordinary sessions stay 12 hours',async()=>{
+ const {sessionMaxAge}=await import('../server/session-policy.js');const x=setup();x.set('Accounts',[{id:'u',role:'user',username:'truc',ownerName:'Trúc',active:true,...passwordRecord('truc123')}]);
+ for(const rememberMe of [true,false]){const start=Date.now();x.call('login',{username:'truc',password:'truc123',rememberMe},'u');const sessions=x.rows('Sessions'),expected=sessionMaxAge(rememberMe)*1000;const newest=Math.max(...sessions.map(s=>s.expires));assert.ok(newest>=start+expected&&newest<=Date.now()+expected);if(rememberMe)x.set('Sessions',[]);}
+ assert.equal(sessionMaxAge(true),2592000);assert.equal(sessionMaxAge(false),43200);
+ const fs=await import('node:fs/promises');const route=await fs.readFile(new URL('../app/api/rpc/route.js',import.meta.url),'utf8');assert.ok(route.includes('maxAge:sessionMaxAge(req.payload?.rememberMe)'));assert.ok(route.includes('httpOnly:true'));
+});

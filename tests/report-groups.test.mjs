@@ -13,7 +13,7 @@ function data(){return {accounts:[{id:'a',ownerName:'Trúc'},{id:'b',ownerName:'
 test('Employee cards combine dates, include visible drafts, and recompute weighted cost',()=>{
  const db=data(),before=JSON.stringify(db),a=reportGroups(db,db.reports,range).find(g=>g.accountId==='a');
  assert.equal(a.reports.length,2);assert.equal(a.drafts,1);assert.equal(a.days,2);assert.equal(a.total.spend,1550);assert.equal(a.total.data,50);assert.equal(a.costPerData,31);assert.equal(a.averageSpend,775);assert.equal(a.remaining,150);
- assert.equal(a.total.success,0.5);assert.equal(a.total.upsale,1);assert.equal(a.total.revenue,1000);assert.equal(a.total.care,300);assert.equal(a.costRatio,1.55);assert.equal(JSON.stringify(db),before);
+ assert.equal(a.total.success,0.5);assert.equal(a.total.upsale,1);assert.equal(a.total.revenue,1000);assert.equal(a.total.care,300);assert.equal(a.costRatio,1550/1300);assert.equal(JSON.stringify(db),before);
 });
 test('Product and status filters affect both report totals and matching order revenue',()=>{
  const db=data(),selected=db.reports.filter(r=>r.accountId==='a'&&r.status==='submitted');

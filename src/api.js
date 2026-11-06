@@ -13,8 +13,8 @@ async function requestImpl(action,payload={},session){
   try{
    const res=await fetch(config.apiUrl,{method:'POST',redirect:'follow',credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{'Content-Type':'application/json','X-SL-Client':'1'},body:JSON.stringify({protocol:2,requestId:read?undefined:requestIds.get(key),action,payload,token:session?.token,uiRole})});
 
-   let data;try{data=await res.json();}catch{throw Error('Máy chủ chưa trả JSON hợp lệ. Kiểm tra API Next.js và kết nối MongoDB.');}
+   let data;try{data=await res.json();}catch{throw Error('Máy chủ chưa trả dữ liệu hợp lệ. Vui lòng thử lại.');}
    if(!data.ok){if(data.code!=='SERVER_ERROR')requestIds.delete(key);throw responseError(data);}
    requestIds.delete(key);return data.data;
-  }catch(e){if(e.name==='AbortError')throw Error('Máy chủ phản hồi quá lâu. Kiểm tra mạng rồi thử lại; yêu cầu lưu được bảo vệ chống trùng.');throw e;}finally{clearTimeout(timer);}
+  }catch(e){if(e.name==='AbortError')throw Error('Máy chủ phản hồi chậm. Vui lòng thử lại.');throw e;}finally{clearTimeout(timer);}
  }

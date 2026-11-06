@@ -5,7 +5,10 @@ export async function connection(){
  const config=mongoConfig();
  // Reuse one pool per warm Vercel process, including development reloads.
  if(!globalThis.__slMongo)globalThis.__slMongo=new MongoClient(config.uri,config.options).connect().catch(e=>{delete globalThis.__slMongo;throw e;});
- const client=await globalThis.__slMongo;return {client,db:client.db(config.database)};
+ const client=await globalThis.__slMongo,db=client.db(config.database);
+ // New appointment storage and indexes are created before the first transaction.
+ if(!globalThis.__slAppointmentIndexes)globalThis.__slAppointmentIndexes=db.collection('Appointments').createIndexes([{key:{id:1},unique:true},{key:{accountId:1,date:1,status:1}},{key:{saleAccountId:1,date:1,status:1}}]).catch(e=>{delete globalThis.__slAppointmentIndexes;throw e;});
+ await globalThis.__slAppointmentIndexes;return {client,db};
 }
 export async function createIndexes(db){
  for(const name of TABLES)await db.collection(name).createIndex({id:1},{unique:true});
@@ -15,6 +18,8 @@ export async function createIndexes(db){
  await db.collection('Orders').createIndex({accountId:1,date:1});
  await db.collection('Orders').createIndex({saleAccountId:1,date:1});
  await db.collection('Orders').createIndex({date:1,customerName:1});
+ await db.collection('Appointments').createIndex({accountId:1,date:1,status:1});
+ await db.collection('Appointments').createIndex({saleAccountId:1,date:1,status:1});
  await db.collection('Assignments').createIndex({accountId:1,productId:1},{unique:true});
  await db.collection('Targets').createIndex({accountId:1,month:1,productId:1},{unique:true});
  await db.collection('Sessions').createIndex({accountId:1});

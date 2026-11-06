@@ -45,6 +45,9 @@ export async function handleRequest(req,{ip='unknown'}={}){
   const accountFilter=loadActor&&loadActor.role!=='admin'?{accountId:loadActor.id}:{};
   let receipt=null;
   if(req.requestId&&actor)receipt=await db.collection('Audit').findOne({actorId:actor.id,action:'requestCompleted','details.requestId':req.requestId},opts);
+  const appointmentMutation=req.action==='saveAppointment';
+  const appointmentBefore=appointmentMutation&&req.payload.id?await db.collection('Appointments').findOne({id:req.payload.id},opts):null;
+  const appointmentDates=[req.payload.date,appointmentBefore?.date].filter(Boolean);
   const isBootstrap=['login','bootstrap'].includes(req.action);
   const scope=isBootstrap?createEngine({}).window(req.payload):null;
   if(scope){
@@ -61,7 +64,9 @@ export async function handleRequest(req,{ip='unknown'}={}){
     contexts.get(r.id).entries.push({productId:r.entry.productId,remaining:Number(r.entry.remaining||0),budget:Number(r.entry.remaining||0)});
    }
    initial.Reports.push(...contexts.values());
-  }else initial.Reports=await rows('Reports',accountFilter);
+  }else initial.Reports=await rows('Reports',appointmentMutation?{date:{$in:appointmentDates}}:accountFilter);
+  const appointmentFilter=scope?{date:{$gte:scope.from,$lte:scope.to},...(loadActor&&loadActor.role!=='admin'?(loadActor.role==='sale'?{saleAccountId:loadActor.id}:{accountId:loadActor.id}):{})}:{};
+  initial.Appointments=await rows('Appointments',appointmentFilter);
   initial.ReportRequests=await rows('ReportRequests',accountFilter);
   let orderFilter={};
   if(isBootstrap){
@@ -79,7 +84,7 @@ export async function handleRequest(req,{ip='unknown'}={}){
   const sessionAccounts=[actor?.id,req.payload.id].filter(x=>typeof x==='string');
   initial.Sessions=await rows('Sessions',{accountId:{$in:sessionAccounts}});
   let auditFilter={id:{$in:[]}};
-  if(req.action==='reportHistory'&&actor?.role==='admin')auditFilter={'details.reportId':req.payload.id};
+  if(req.action==='reportHistory'&&actor){const report=initial.Reports.find(r=>r.id===req.payload.id);if(report&&(actor.role==='admin'||report.accountId===actor.id))auditFilter={'details.reportId':req.payload.id};}
   else if(actor)auditFilter={actorId:actor.id,$or:[{'details.requestId':req.requestId||'__none'},{'details.batchId':req.payload.batchId||'__none'}]};
   initial.Audit=await rows('Audit',auditFilter);
   const offset=Number(req.payload.offset||0);

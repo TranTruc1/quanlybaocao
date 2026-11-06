@@ -40,6 +40,12 @@ try{
  check((await db.collection('ReportRequests').findOne({date:'2025-01-01'})).status,'completed');
  const report=await db.collection('Reports').findOne({date:'2025-01-01'});await call('deleteReport',{id:report.id,revision:report.revision},admin.token);check(await db.collection('Reports').countDocuments({id:report.id}),0);
  check(await db.collection('Orders').countDocuments({}),1);
+ const appointmentInput={accountId:'u',productId:'p',date,customerName:'Hẹn Anna',status:'pending',note:''};
+ await call('saveAppointment',appointmentInput,user.token);let appointment=await db.collection('Appointments').findOne({customerName:'Hẹn Anna'});check((await db.collection('Reports').findOne({accountId:'u',date})).entries.find(e=>e.productId==='p').appointments,1);
+ await call('saveAppointment',{...appointment,status:'converted'},user.token);check((await db.collection('Reports').findOne({accountId:'u',date})).entries.find(e=>e.productId==='p').appointments,0);check(await db.collection('Appointments').countDocuments({}),1);
+ const latestReport=await db.collection('Reports').findOne({accountId:'u',date});await assert.rejects(call('changeReportDate',{id:latestReport.id,date:prior,revision:latestReport.revision},user.token),e=>e.code==='FORBIDDEN');count++;
+ const {NextRequest}=await import('next/server.js'),{POST}=await import('../app/api/rpc/route.js');
+ const loginResponse=await POST(new NextRequest('http://localhost:3000/api/rpc',{method:'POST',headers:{origin:'http://localhost:3000','content-type':'application/json','x-sl-client':'1'},body:JSON.stringify({action:'login',payload:{username:'truc',password:'truc123',rememberMe:true}})}));check(loginResponse.status,200);assert.match(loginResponse.headers.get('set-cookie'),/Max-Age=2592000/i);assert.match(loginResponse.headers.get('set-cookie'),/HttpOnly/i);count+=2;check((await loginResponse.json()).data.token,'cookie');
  await call('logout',{},user.token);await assert.rejects(call('bootstrap',{},user.token),e=>e.code==='UNAUTHENTICATED');count++;
  console.log('MongoDB replica-set integration: '+count+' checks passed, including concurrent writes, retry receipts and rollback.');
 }finally{await client.close();await repl.stop();}

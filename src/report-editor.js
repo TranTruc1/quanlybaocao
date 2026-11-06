@@ -1,3 +1,4 @@
+import {appointmentCount} from './appointments.js';
 import {previewTransferBudget} from './budget-transfers.js';
 import {aggregate,carryoverBefore,divide,validateEntries} from './domain.js';
 export function reportEditorModel(db,record,draft=record.entries,transfers=record.transfers||[]){
@@ -7,11 +8,11 @@ export function reportEditorModel(db,record,draft=record.entries,transfers=recor
  const rows=entries.map(e=>{
   const sums=stats.detail.find(r=>r.productId===e.productId)||{};
   const goal=(db.targets||[]).filter(t=>t.accountId===record.accountId&&t.productId===e.productId&&t.month===record.date.slice(0,7)).reduce((n,t)=>n+Number(t.revenue||0),0);
-  return {...e,goal,achieved:divide(sums.revenue||0,goal),success:sums.success||0,upsale:sums.upsale||0,careOrderCount:sums.careOrderCount||0,careOnlyCount:sums.careOnlyCount||0,upsaleRevenue:sums.upsaleRevenue||0,careOnlyRevenue:sums.careOnlyRevenue||0,
-   orderCount:sums.orderCount||0,revenue:sums.revenue||0,care:sums.care||0,
+  return {...e,appointments:appointmentCount(db.appointments,record.accountId,record.date,e.productId,db.accounts?.find(a=>a.id===record.accountId)?.role,e.appointments),goal,achieved:divide(sums.revenue||0,goal),success:sums.success||0,upsale:sums.upsale||0,careOrderCount:sums.careOrderCount||0,careOnlyCount:sums.careOnlyCount||0,upsaleRevenue:sums.upsaleRevenue||0,careOnlyRevenue:sums.careOnlyRevenue||0,
+   orderCount:sums.orderCount||0,totalRevenue:sums.totalRevenue||0,revenue:sums.revenue||0,care:sums.care||0,
    spend:Number(e.budget||0)-Number(e.remaining||0),
    costPerData:divide(Number(e.budget||0)-Number(e.remaining||0),Number(e.data||0)),
-   costRatio:divide(Number(e.budget||0)-Number(e.remaining||0),sums.revenue||0)};
+   costRatio:divide(Number(e.budget||0)-Number(e.remaining||0),(sums.revenue||0)+(sums.care||0))};
  });
  return {entries:rows,total:{...stats.total,costPerData:stats.costPerData,costRatio:stats.costRatio}};
 }

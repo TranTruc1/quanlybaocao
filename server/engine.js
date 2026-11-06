@@ -1,8 +1,10 @@
 // Domain rules ported from the existing backend. A new isolated engine per request.
+import {appointmentCount} from '../src/appointments.js';
+import {sessionMaxAge} from './session-policy.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {passwordRecord,passwordDigest,equalSecret} from './passwords.js';
 import {normalizeBudgets} from '../src/budget-transfers.js';
-export const TABLES=['Accounts','Products','Assignments','Reports','Orders','Targets','Sessions','Audit','Notifications','ReportRequests'];
+export const TABLES=['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','Sessions','Audit','Notifications','ReportRequests'];
 export const sha=s=>createHash('sha256').update(s).digest('base64').replaceAll('+','-').replaceAll('/','_');
 export function createEngine(initial={},options={}){
  var FIELDS_=['budget','remaining','data','tt','ktt','success','upsale','appointments','late'];
@@ -42,7 +44,8 @@ function mutate_(action,p,user){
       FIELDS_.forEach(function(k){clean[k]=k==='ktt'?0:num_(e[k],!['budget','remaining','success','upsale'].includes(k));});
       ['success','upsale'].forEach(function(k){if(!Number.isInteger(clean[k]*2))throw applicationError_('So don phai theo buoc 0,5.');});
       if(clean.tt>clean.data)throw applicationError_('Data tương tác không thể vượt Tổng data.');clean.ktt=clean.data-clean.tt;
-      if(account.role==='sale'){clean.budget=0;clean.remaining=0;clean.appointments=0;clean.late=0;delete clean.received;}
+      if(account.role==='sale'){clean.budget=0;clean.remaining=0;clean.late=0;delete clean.received;}
+      clean.appointments=appointmentCount(read_('Appointments'),accountId,p.date,e.productId,account.role,previousEntry?.appointments||0);
       var matchingOrders=read_('Orders').filter(function(o){return (account.role==='sale'?o.saleAccountId===accountId:o.accountId===accountId)&&o.productId===e.productId&&o.date===p.date&&!o.isBounced;});
       clean.success=matchingOrders.filter(function(o){return !careOrder_(o);}).reduce(function(n,o){return n+weightOrder_(o);},0);
       clean.upsale=matchingOrders.filter(function(o){return o.type==='upsale';}).reduce(function(n,o){return n+weightOrder_(o);},0);
@@ -54,11 +57,7 @@ function mutate_(action,p,user){
     writeReportBudgets_(read_('Reports').filter(function(r){return r.id!==proposed.id;}).concat([proposed]),proposed.id,user);
     completeRequests_(accountId,p.date,user);
   } else if(action==='changeReportDate') {
-    var report=get_('Reports',p.id);if(!report||(user.role!=='admin'&&report.accountId!==user.id))throw applicationError_('Không có quyền sửa bảng này.');
-    date_(p.date);if(report.revision!==Number(p.revision))throw applicationError_('Bảng vừa được cập nhật. Tải lại trước khi sửa.');
-    if(read_('Reports').some(function(r){return r.id!==report.id&&r.accountId===report.accountId&&r.date===p.date;}))throw applicationError_('Account đã có bảng ở ngày này. Chọn ngày khác hoặc chỉnh bảng hiện có.');
-    checkReportSequence_(report.accountId,p.date,user,report.id);
-    var previousDate=report.date;report.date=p.date;report.revision++;report.updatedAt=now_();writeReportBudgets_(read_('Reports').filter(function(r){return r.id!==report.id;}).concat([report]),report.id,user);audit_(user.id,'reportDateChanged',{id:report.id,from:previousDate,to:p.date});
+    throw Object.assign(new Error('Không thể đổi ngày báo cáo đã lưu.'),{code:'FORBIDDEN'});
   } else if(action==='reopen') {
     admin_(user);var r=get_('Reports',p.id);if(!r)throw applicationError_('Không tìm thấy bảng.');var beforeReopen=JSON.parse(JSON.stringify(r));r.postedEntries=JSON.parse(JSON.stringify(r.entries));r.status='draft';r.revision++;r.updatedAt=now_();put_('Reports',r);audit_(user.id,'reportReopened',{reportId:r.id,accountId:r.accountId,before:beforeReopen,after:r});
   } else if(action==='saveOrder') {
@@ -125,25 +124,26 @@ function mutate_(action,p,user){
 }
 
 function visible_(user,scope){
-  var db={apiVersion:2,viewer:publicAccount_(user),accounts:read_('Accounts').map(publicAccount_),products:read_('Products'),assignments:read_('Assignments'),reportrequests:read_('ReportRequests').filter(r=>user.role==='admin'||r.accountId===user.id),reports:read_('Reports'),orders:read_('Orders'),targets:read_('Targets'),notifications:notificationFeed_(user,0),audit:scope?[]:(user.role==='admin'?read_('Audit'):[])};
+  var db={apiVersion:2,viewer:publicAccount_(user),accounts:read_('Accounts').map(publicAccount_),products:read_('Products'),assignments:read_('Assignments'),reportrequests:read_('ReportRequests').filter(r=>user.role==='admin'||r.accountId===user.id),reports:read_('Reports'),orders:read_('Orders'),appointments:read_('Appointments'),targets:read_('Targets'),notifications:notificationFeed_(user,0),audit:scope?[]:(user.role==='admin'?read_('Audit'):[])};
   if(user.role!=='admin'){
     var ownAssignments=db.assignments.filter(function(a){return a.accountId===user.id;}),ownProducts=Object.create(null);
     ownAssignments.filter(function(a){return a.active;}).forEach(function(a){ownProducts[a.productId]=true;});
-    var directory=user.role==='sale'?db.accounts.filter(function(a){return a.active&&a.role==='user'&&db.assignments.some(function(x){return x.active&&x.accountId===a.id&&ownProducts[x.productId];});}):db.accounts.filter(function(a){return a.role==='sale'&&((a.active&&db.assignments.some(function(x){return x.active&&x.accountId===a.id&&ownProducts[x.productId];}))||db.orders.some(function(o){return o.accountId===user.id&&o.saleAccountId===a.id;}));});
+    var directory=user.role==='sale'?db.accounts.filter(function(a){return a.role==='user'&&((a.active&&db.assignments.some(function(x){return x.active&&x.accountId===a.id&&ownProducts[x.productId];}))||db.appointments.some(o=>o.saleAccountId===user.id&&o.accountId===a.id));}):db.accounts.filter(function(a){return a.role==='sale'&&((a.active&&db.assignments.some(function(x){return x.active&&x.accountId===a.id&&ownProducts[x.productId];}))||db.orders.some(function(o){return o.accountId===user.id&&o.saleAccountId===a.id;})||db.appointments.some(function(o){return o.accountId===user.id&&o.saleAccountId===a.id;}));});
     var directoryIds=directory.map(function(a){return a.id;});
     db.accounts=db.accounts.filter(function(a){return a.id===user.id||directoryIds.includes(a.id);});
     db.assignments=db.assignments.filter(function(a){return a.accountId===user.id||(directoryIds.includes(a.accountId)&&ownProducts[a.productId]&&a.active);});
     db.reports=db.reports.filter(function(r){return r.accountId===user.id;});
     db.targets=db.targets.filter(function(r){return r.accountId===user.id;});
     db.orders=db.orders.filter(function(r){return user.role==='sale'?r.saleAccountId===user.id:r.accountId===user.id;});
-    var ids=Object.create(null);ownAssignments.filter(function(a){return a.active;}).forEach(function(a){ids[a.productId]=true;});db.reports.forEach(function(r){r.entries.forEach(function(e){ids[e.productId]=true;});});db.orders.forEach(function(o){ids[o.productId]=true;});db.targets.forEach(function(t){ids[t.productId]=true;});db.products=db.products.filter(function(p){return ids[p.id];});
+    db.appointments=db.appointments.filter(function(r){return user.role==='sale'?r.saleAccountId===user.id:r.accountId===user.id;});
+    var ids=Object.create(null);ownAssignments.filter(function(a){return a.active;}).forEach(function(a){ids[a.productId]=true;});db.reports.forEach(function(r){r.entries.forEach(function(e){ids[e.productId]=true;});});db.orders.forEach(function(o){ids[o.productId]=true;});db.appointments.forEach(function(o){ids[o.productId]=true;});db.targets.forEach(function(t){ids[t.productId]=true;});db.products=db.products.filter(function(p){return ids[p.id];});
   }
   if(scope){
     var latest=Object.create(null);
     db.reports.filter(function(r){return r.date<scope.from&&(r.status==='submitted'||r.postedEntries);}).sort(function(a,b){return a.date.localeCompare(b.date);}).forEach(function(r){(r.status==='submitted'?r.entries:r.postedEntries).forEach(function(e){latest[r.accountId+'|'+e.productId]={r:r,e:e};});});
     var contexts=Object.create(null);Object.keys(latest).forEach(function(k){var x=latest[k];if(!contexts[x.r.id])contexts[x.r.id]={id:x.r.id,accountId:x.r.accountId,date:x.r.date,status:'submitted',revision:x.r.revision,_carryContext:true,_normalized:true,entries:[]};contexts[x.r.id].entries.push({productId:x.e.productId,remaining:Number(x.e.remaining||0),budget:Number(x.e.remaining||0)});});
     db.reports=db.reports.filter(function(r){return r.date>=scope.from&&r.date<=scope.to;}).map(function(r){r._normalized=true;return r;}).concat(Object.keys(contexts).map(function(k){return contexts[k];}));
-    db.orders=db.orders.filter(function(o){return o.date>=scope.from&&o.date<=scope.to;});
+    db.orders=db.orders.filter(function(o){return o.date>=scope.from&&o.date<=scope.to;});db.appointments=db.appointments.filter(function(o){return o.date>=scope.from&&o.date<=scope.to;});
     db.targets=db.targets.filter(function(t){return t.month>=scope.from.slice(0,7)&&t.month<=scope.to.slice(0,7);});db.scope=scope;
   }
   return db;
@@ -155,8 +155,8 @@ function scope_(p){
 }
 function delta_(user,changes,removed){
   var result={notifications:notificationFeed_(user,0),kind:'delta',apiVersion:2,viewer:publicAccount_(user),upsert:{},removed:{}};
-  ['Accounts','Products','Assignments','Reports','Orders','Targets','ReportRequests'].forEach(function(table){var ids=(changes||{})[table]||[],rows=ids.map(function(id){return get_(table,id);}).filter(Boolean);
-    if(user.role!=='admin')rows=rows.filter(function(r){return table==='Accounts'?r.id===user.id:table==='Products'?read_('Assignments').some(function(a){return a.active&&a.accountId===user.id&&a.productId===r.id;}):table==='Orders'&&user.role==='sale'?r.saleAccountId===user.id:r.accountId===user.id;});
+  ['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','ReportRequests'].forEach(function(table){var ids=(changes||{})[table]||[],rows=ids.map(function(id){return get_(table,id);}).filter(Boolean);
+    if(user.role!=='admin')rows=rows.filter(function(r){return table==='Accounts'?r.id===user.id:table==='Products'?read_('Assignments').some(function(a){return a.active&&a.accountId===user.id&&a.productId===r.id;}):(table==='Orders'||table==='Appointments')&&user.role==='sale'?r.saleAccountId===user.id:r.accountId===user.id;});
     if(table==='Accounts')rows=rows.map(publicAccount_);if(table==='Reports')rows=rows.map(function(r){r._normalized=true;return r;});
     result.upsert[table.toLowerCase()]=rows;result.removed[table.toLowerCase()]=(removed||{})[table]||[];
   });return result;
@@ -255,7 +255,7 @@ function prepareProductAssignments_(payload,productId){
  });
 }
 
-var BUSINESS_TABLES_=['Accounts','Products','Assignments','Reports','Orders','Targets','ReportRequests'];
+var BUSINESS_TABLES_=['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','ReportRequests'];
 function rememberBefore_(table,id,value){
  if(!REQUEST_||!BUSINESS_TABLES_.includes(table))return;
  var records=REQUEST_.before[table]||(REQUEST_.before[table]=Object.create(null));
@@ -269,7 +269,8 @@ function notifyChanges_(actor,action,p){
   Array.from(new Set(changed)).forEach(function(id){
    var before=REQUEST_.before[table]?.[id]||null,after=get_(table,id),record=after||before;if(!record)return;
    var recipients=admins.slice(),target={page:'overview'},label='';
-   [before,after].filter(Boolean).forEach(function(r){if(table==='Accounts')recipients.push(r.id);else if(table==='Orders')recipients.push(r.accountId,r.saleAccountId);else if(r.accountId)recipients.push(r.accountId);});
+   [before,after].filter(Boolean).forEach(function(r){if(table==='Accounts')recipients.push(r.id);else if(table==='Orders'||table==='Appointments')recipients.push(r.accountId,r.saleAccountId);else if(r.accountId)recipients.push(r.accountId);});
+   if(table==='Appointments'){label='đơn hẹn của '+record.customerName;target={page:'appointments',focus:id,date:record.date};}
    if(table==='Orders'){label='đơn hàng '+record.customerName;target={page:'orders',focus:id,date:record.date};}
    if(table==='ReportRequests'){label='yêu cầu '+(record.kind==='fill'?'điền':'sửa')+' báo cáo ngày '+record.date+(record.reason?' — '+record.reason:'');target={page:'daily',report:{accountId:record.accountId,date:record.date}};}
    if(table==='Reports'){label='báo cáo ngày '+record.date;target={page:'daily',report:{id:id,accountId:record.accountId,date:record.date}};}
@@ -315,17 +316,43 @@ function ackNotifications_(user,p){
  function completeRequests_(accountId,date,user){
   read_('ReportRequests').filter(r=>r.accountId===accountId&&r.date===date&&r.status==='pending').forEach(r=>{r.status='completed';r.completedAt=now_();r.completedBy=user.id;r.revision++;put_('ReportRequests',r);});
  }
+
+ function saveAppointment_(p,user){
+  date_(p.date);const old=p.id?get_('Appointments',p.id):null;
+  if(p.id&&!old)throw applicationError_('Đơn hẹn không còn tồn tại.');
+  if(user.role==='admin'&&!old)throw applicationError_('Admin chỉ sửa đơn hẹn đã có.');
+  if(old&&user.role!=='admin'&&old.accountId!==user.id&&old.saleAccountId!==user.id)throw applicationError_('Không có quyền sửa đơn hẹn này.');
+  if(old&&Number(p.revision||0)!==Number(old.revision||0))throw conflict_();
+  if(!['pending','converted','cancelled'].includes(p.status)||typeof p.customerName!=='string'||!p.customerName.trim()||p.customerName.trim().length>160||typeof (p.note||'')!=='string'||String(p.note||'').length>500)throw applicationError_('Thông tin đơn hẹn chưa hợp lệ.');
+  const accountId=user.role==='sale'?String(p.accountId||''):owner_(p.accountId,user),account=get_('Accounts',accountId);
+  if(!account||account.role!=='user'||(!account.active&&(!old||old.accountId!==accountId||old.productId!==p.productId)))throw applicationError_('Chọn MKT đang hoạt động.');
+  if(!(old&&old.accountId===accountId&&old.productId===p.productId))checkProduct_(accountId,p.productId);
+  let saleAccountId=user.role==='sale'?user.id:(Object.prototype.hasOwnProperty.call(p,'saleAccountId')?p.saleAccountId||null:old?.saleAccountId||null);
+  if(saleAccountId&&(!old||old.saleAccountId!==saleAccountId||old.productId!==p.productId)){const sale=get_('Accounts',saleAccountId);if(!sale||sale.role!=='sale'||!sale.active)throw applicationError_('SALE phụ trách không hợp lệ.');checkProduct_(saleAccountId,p.productId);}
+  if(user.role==='sale'&&!(old&&old.saleAccountId===user.id&&old.productId===p.productId))checkProduct_(user.id,p.productId);
+  const next={id:old?.id||newId_(),accountId,saleAccountId,productId:p.productId,date:p.date,customerName:p.customerName.trim(),note:String(p.note||'').trim(),status:p.status,revision:(old?.revision||0)+1,createdAt:old?.createdAt||now_(),createdBy:old?.createdBy||user.id,updatedAt:now_()};
+  put_('Appointments',next);
+  const related=[old,next].filter(Boolean);read_('Reports').filter(r=>related.some(a=>a.date===r.date&&(a.accountId===r.accountId||a.saleAccountId===r.accountId))).forEach(report=>{
+   const before=structuredClone(report),role=get_('Accounts',report.accountId)?.role;
+   report.entries=report.entries.map(entry=>related.some(a=>a.date===report.date&&a.productId===entry.productId&&(a.accountId===report.accountId||a.saleAccountId===report.accountId))?{...entry,appointments:appointmentCount(read_('Appointments'),report.accountId,report.date,entry.productId,role,0)}:entry);
+   if(JSON.stringify(before.entries)!==JSON.stringify(report.entries)){report.revision=(report.revision||0)+1;report.updatedAt=now_();put_('Reports',report);audit_(user.id,'appointmentsRecomputed',{reportId:report.id,accountId:report.accountId,before,after:report});}
+  });
+  return true;
+ }
  function extraMutation_(action,p,user){
+  if(action==='saveAppointment')return saveAppointment_(p,user);
   if(action==='deleteReport'){
    admin_(user);const r=get_('Reports',p.id);if(!r)throw applicationError_('Không tìm thấy báo cáo.');if(r.revision!==Number(p.revision))throw conflict_();
    const next=normalizeReportBudgets_(read_('Reports').filter(x=>x.id!==r.id));
    remove_('Reports',r.id);writeReportBudgets_(next,null,user);audit_(user.id,'reportDeleted',{reportId:r.id,accountId:r.accountId,before:r});return true;
   }
   if(action==='requestReport'){
-   admin_(user);date_(p.date);const a=get_('Accounts',p.accountId);
-   if(!a||!a.active||!employeeRole_(a.role)||!['fill','correct'].includes(p.kind)||typeof p.reason!=='string'||p.reason.length>1000)throw applicationError_('Yêu cầu báo cáo không hợp lệ.');
-   const old=read_('ReportRequests').find(r=>r.accountId===a.id&&r.date===p.date&&r.status==='pending');
-   put_('ReportRequests',{id:old?.id||newId_(),accountId:a.id,date:p.date,kind:p.kind,reason:p.reason,status:'pending',requestedBy:user.id,createdAt:old?.createdAt||now_(),updatedAt:now_(),revision:(old?.revision||0)+1});return true;
+   admin_(user);const dates=Array.isArray(p.dates)?[...new Set(p.dates)]:[p.date];const a=get_('Accounts',p.accountId);
+   if(!a||!a.active||!employeeRole_(a.role)||!['fill','correct'].includes(p.kind)||typeof p.reason!=='string'||p.reason.length>1000||dates.length<1||dates.length>366||dates.some(d=>typeof d!=='string'))throw applicationError_('Yêu cầu báo cáo không hợp lệ.');
+   dates.forEach(date_);dates.forEach(function(date){
+    const old=read_('ReportRequests').find(r=>r.accountId===a.id&&r.date===date&&r.status==='pending');
+    put_('ReportRequests',{id:old?.id||newId_(),accountId:a.id,date:date,kind:p.kind,reason:p.reason,status:'pending',requestedBy:user.id,createdAt:old?.createdAt||now_(),updatedAt:now_(),revision:(old?.revision||0)+1});
+   });return true;
   }
   if(action==='cancelReportRequest'){
    admin_(user);const r=get_('ReportRequests',p.id);if(!r)throw applicationError_('Không tìm thấy yêu cầu.');if(r.revision!==Number(p.revision))throw conflict_();r.status='cancelled';r.revision++;r.updatedAt=now_();put_('ReportRequests',r);return true;
@@ -344,7 +371,7 @@ function ackNotifications_(user,p){
    const digest=passwordDigest_(password,candidate);
    if(!a||!equal_(digest,a.passwordHash))throw applicationError_('Tên đăng nhập hoặc mật khẩu không đúng.');
    if(!a.pepperVersion||a.iterations<210000){Object.assign(a,passwordRecord_(password));put_('Accounts',a);}
-   const token=uuid_()+uuid_();put_('Sessions',{id:sha_(token),accountId:a.id,expires:Date.now()+43200000});
+   const token=uuid_()+uuid_();const sessionDuration=sessionMaxAge(p.rememberMe)*1000;put_('Sessions',{id:sha_(token),accountId:a.id,expires:Date.now()+sessionDuration});
    return {user:publicAccount_(a),token,db:visible_(a,scope_({}))};
   }
   const user=requestUser_(req);
@@ -352,7 +379,7 @@ function ackNotifications_(user,p){
   if(action==='notifications')return notificationFeed_(user,p.offset);
   if(action==='ackNotifications'){ackNotifications_(user,p);return notificationFeed_(user,0);}
   if(action==='reportHistory'){
-   admin_(user);if(!get_('Reports',p.id))throw applicationError_('Không tìm thấy báo cáo.');const offset=Number(p.offset||0);
+   const report=get_('Reports',p.id);if(!report)throw applicationError_('Không tìm thấy báo cáo.');if(user.role!=='admin'&&report.accountId!==user.id)throw Object.assign(new Error('Không có quyền xem lịch sử báo cáo này.'),{code:'FORBIDDEN'});const offset=Number(p.offset||0);
    if(!Number.isInteger(offset)||offset<0||offset>1000000)throw applicationError_('Trang không hợp lệ.');
    const logs=read_('Audit').filter(a=>a.details?.reportId===p.id).sort((a,b)=>b.time.localeCompare(a.time)||b.id.localeCompare(a.id));
    return {audit:logs.slice(offset,offset+100),nextOffset:offset+100<logs.length?offset+100:null};

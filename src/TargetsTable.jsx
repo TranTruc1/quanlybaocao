@@ -7,6 +7,6 @@ export default function TargetsTable({summary,sale=false,focusProduct}){
  <tbody>{rows.map(r=><tr id={'target-product-'+r.product.id} className={focusProduct===r.product.id?'notification-focus':''} key={r.product.id}><th scope="row">{r.product.name}</th><td>${decimal(r.target?.priceUsd??r.product.priceUsd)}<small>{money(r.price)} đ</small></td><td>{money(r.goal)}</td><td>{money(r.orders)}</td><td>{decimal(r.perDay)}</td><td className="strong">{money(r.revenue)}</td><td><span className="ratio">{pct(r.achieved)}</span></td>{!sale&&<><td>{money(r.careGoal)}</td><td>{money(r.care)}</td></>}</tr>)}</tbody>
  <tfoot><tr><th scope="row">Tổng tất cả</th><td aria-label="Không cộng giá đơn vị">—</td><td>{money(total.goal)}</td><td>{money(total.orders)}</td><td>{decimal(total.perDay)}</td><td>{money(total.revenue)}</td><td><span className="ratio">{pct(total.achieved)}</span></td>{!sale&&<><td>{money(total.careGoal)}</td><td>{money(total.care)}</td></>}</tr></tfoot></table>
  {!rows.length&&<div className="empty"><p>Chưa có sản phẩm hoặc mục tiêu trong tháng này.</p></div>}
- <div className="table-note">Hoàn thành tổng = tổng doanh số ÷ tổng mục tiêu. Đơn TB/ngày = tổng số đơn cần đạt ÷ số ngày trong tháng. Giá đơn vị không cộng tổng.</div>
+ 
  </div>;
 }

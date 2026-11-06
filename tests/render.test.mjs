@@ -8,7 +8,7 @@ import {renderToString} from 'react-dom/server';
 import {fixtureDb} from './fixtures.js';
 import {previousDay} from '../src/domain.js';
 const storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};globalThis.window={APP_CONFIG:{}};
-const source=(await fs.readFile(new URL('../src/main.jsx',import.meta.url),'utf8')).replace(/createRoot\(document\.getElementById\('root'\)\)\.render\([^\n]+\);/, '')+'\nexport {App,Overview,Daily,Orders,Targets,Products,Accounts,Login,ReportList,DataWindow,Filters}; export {selectCalendarDay,reportDatePreset} from "./ReportDateFilter.jsx";';
+const source=(await fs.readFile(new URL('../src/main.jsx',import.meta.url),'utf8')).replace(/createRoot\(document\.getElementById\('root'\)\)\.render\([^\n]+\);/, '')+'\nexport {App,Overview,Daily,Orders,Targets,Products,Accounts,Login,ReportList,DataWindow,Filters,SaleDaily}; export {default as InlineReportEditor} from "./InlineReportEditor.jsx"; export {default as SaleReportEditor} from "./SaleReportEditor.jsx"; export {selectCalendarDay,reportDatePreset} from "./ReportDateFilter.jsx";';
 const path=new URL('../.review-render-main.mjs',import.meta.url);
 await build({stdin:{contents:source,loader:'jsx',resolveDir:fileURLToPath(new URL('../src',import.meta.url))},bundle:true,format:'esm',platform:'node',outfile:fileURLToPath(path),external:['react','react-dom','react-dom/*','lucide-react'],loader:{'.css':'empty'}});
 const ui=await import(path.href);await fs.unlink(path);
@@ -27,13 +27,11 @@ test('Reload shows the workspace shell with placeholders, not a verification wal
  finally{delete globalThis.sessionStorage;storage.clear();}
 });
 
-test('Report list displays one card per employee and employee detail retains back and date actions',()=>{
+test('Overview shows the current month while detail opens the most recent due day with one calendar',()=>{
  const range=[previousDay().slice(0,7)+'-01',previousDay().slice(0,7)+'-30'];
- const filter={mode:'range',from:range[0],to:range[1],date:range[0],month:range[0].slice(0,7),account:'all',product:'all'};
- const render=selectedAccount=>renderToString(React.createElement(ui.DataWindow.Provider,{value:{scope:{from:range[0],to:range[1]},ensure(){}}},React.createElement(ui.ReportList,{...base,user:admin,FilterComponent:ui.Filters,onOpen(){},initialView:{filter,status:'all',selectedAccount}})));
- const cards=render(null);assert.ok(cards.includes('employee-report-grid'));assert.equal((cards.match(/aria-label="Xem báo cáo chi tiết của /g)||[]).length,3);assert.equal(cards.includes('table-scroll'),false);
- const detail=render('u1');assert.equal(detail.includes('Quay lại danh sách'),false);assert.ok(detail.includes('Chi tiết theo sản phẩm'));assert.equal(detail.includes('employee-report-detail'),false);assert.ok(detail.includes('Lưu thay đổi'));assert.ok(detail.includes('Sửa Tổng data'));assert.equal(detail.includes('Các bảng theo ngày'),false);assert.ok(detail.includes('Lịch sử sửa'));assert.ok(detail.includes('Ngày chỉnh sửa'));
- const daily=renderToString(React.createElement(ui.Daily,{...base,user:admin,initial:db.reports[0],onBack(){}}));assert.ok(daily.includes('Quay lại'));assert.ok(daily.includes('báo cáo nhân viên'));
+ const render=selectedAccount=>renderToString(React.createElement(ui.DataWindow.Provider,{value:{scope:{from:range[0],to:range[1]},ensure(){}}},React.createElement(ui.ReportList,{...base,user:admin,FilterComponent:ui.Filters,onOpen(){},initialView:{selectedAccount}})));
+ const cards=render(null);assert.ok(cards.includes('employee-report-grid'));assert.equal((cards.match(/aria-label="Xem báo cáo chi tiết của /g)||[]).length,3);
+ const detail=render('u1');assert.ok(cards.includes('Tháng '));assert.ok(detail.includes('Chi tiết theo sản phẩm'));assert.ok(detail.includes('Sửa Tổng data'));assert.ok(detail.includes('Tổng doanh số'));assert.equal(detail.includes('Ngày / Dải ngày'),false);assert.equal(detail.includes('Ngày gần nhất'),false);assert.equal(detail.includes('Chưa có báo cáo trong khoảng'),false);assert.equal((detail.match(/class="filterbar"/g)||[]).length,1);
 });
 
 test('Unified report has one navigation entry, one filter and no draft workflow',()=>{
@@ -56,10 +54,19 @@ test('Changing report date, month, range or product preserves the employee URL',
   callback({...filter,...change});assert.equal(nextRoute.employee,'u1');assert.equal(nextRoute.area,'admin');assert.equal(nextRoute.day,null);
  }
 });
-test('Admin detail offers a correction request and a fixed save dock without transfer controls',()=>{
- const filter={mode:'day',date:db.reports[0].date,account:'all',product:'all'};
- const html=renderToString(React.createElement(ui.ReportList,{...base,user:admin,FilterComponent:ui.Filters,onOpen(){},initialView:{filter,selectedAccount:db.reports[0].accountId}}));
- assert.ok(html.includes('Yêu cầu sửa báo cáo'));assert.ok(html.includes('inline-save-dock'));assert.equal(html.includes('carry-transfer-button'),false);assert.equal(html.includes('Các bảng theo ngày'),false);
+test('Detailed report keeps its date static for both admin and employees',()=>{
+ const props={...base,record:db.reports[0],onHistory(){},onEditDate(){}};
+ const html=renderToString(React.createElement(ui.InlineReportEditor,{...props,user:admin}));
+ assert.ok(html.includes('inline-save-dock'));assert.ok(html.includes('report-management-actions'));assert.ok(html.includes('Lịch sử sửa'));assert.equal(html.includes('<button type="button" class="report-edit-date"'),false);
+ const employee=renderToString(React.createElement(ui.InlineReportEditor,{...props,user}));assert.equal(employee.includes('<button type="button" class="report-edit-date"'),false);assert.ok(employee.includes('Ngày báo cáo'));
+});
+test('Both MKT and SALE input routes use the former product cards and single-day picker',()=>{
+ const sale={...user,id:'sale-1',role:'sale'};
+ for(const account of [user,sale]){const data={...db,accounts:[...db.accounts,sale],assignments:[...db.assignments,...db.assignments.filter(a=>a.accountId===user.id).map(a=>({...a,id:a.id+'sale',accountId:sale.id}))]};
+ const html=renderToString(React.createElement(ui.DataWindow.Provider,{value:{scope:{from:'2020-01-01',to:'2030-12-31'},ensure(){}}},React.createElement(account.role==='sale'?ui.SaleDaily:ui.Daily,{...base,db:data,user:account,initial:{accountId:account.id,date:previousDay()},onBack(){},onRouteChange(){}})));
+ if(account.role==='sale'){assert.ok(html.includes('entry-card'));assert.ok(html.includes('entry-fields'));}else assert.ok(html.includes('Bảng điền hằng ngày'));assert.equal(html.includes('weekly-entry-grid'),false);assert.equal(html.includes('Tổng tuần'),false);assert.ok(html.includes('Ngày báo cáo'));if(account.role==='sale')assert.ok(html.includes('Gửi báo cáo')||html.includes('Lưu thay đổi'));
+ }
+ assert.ok(source.includes("page==='daily'&&saleDaily&&<SaleDaily"));assert.ok(source.includes("page==='daily'&&!saleDaily&&<Daily"));assert.equal(source.includes("page==='daily'&&<WeeklyEntry"),false);
 });
 
 test('Calendar selects a single day or a sorted range and restarts after a complete range',()=>{
@@ -70,7 +77,7 @@ test('Calendar selects a single day or a sorted range and restarts after a compl
 });
 test('Date presets use actual report bounds and Monday to Saturday',()=>{
  const bounds=[{first:'2024-05-01',last:'2026-11-03'},{first:'2026-10-01',last:'2026-11-04'}];
- assert.deepEqual(ui.reportDatePreset('latest','2026-11-05',bounds),{start:'2026-11-04',end:'2026-11-04'});
+ assert.deepEqual(ui.reportDatePreset('latest','2026-11-06',bounds),{start:'2026-11-05',end:'2026-11-05'});
  assert.deepEqual(ui.reportDatePreset('all','2026-11-05',bounds),{start:'2024-05-01',end:'2026-11-05'});
  assert.deepEqual(ui.reportDatePreset('week','2026-11-05'),{start:'2026-11-02',end:'2026-11-07'});
  assert.deepEqual(ui.reportDatePreset('week','2026-11-08'),{start:'2026-11-02',end:'2026-11-07'});

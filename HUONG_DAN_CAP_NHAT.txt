@@ -1,2 +1,31 @@
-Chép đè vào dự án. Giữ nguyên .env.local và dữ liệu.
-Khởi động lại npm run dev rồi Ctrl+Shift+R trong trình duyệt.
+BẢN CẬP NHẬT UI VÀ ĐƠN HẸN – MKT / SALE
+
+ĐƠN HẸN
+- Có mục Đơn hẹn trong menu. MKT/SALE tự thêm theo ngày hẹn, sản phẩm, khách hàng và phân công như luồng đơn hàng hiện tại.
+- Đang hẹn được tính vào dòng Đơn hẹn trong báo cáo đúng ngày, sản phẩm, MKT và SALE phụ trách.
+- Đã chốt / Đã hủy tự trừ khỏi Đơn hẹn; mở lại Đang hẹn sẽ cộng lại. Bản ghi được giữ để theo dõi.
+- Dòng Đơn hẹn trong báo cáo tự tính, không nhập tay. Doanh số tiếp tục lấy từ bảng Đơn hàng.
+- Số đơn hẹn nhập tay trước đây được giữ khi chưa có danh sách đơn hẹn quản lý cùng ngày/sản phẩm.
+- Collection và index mới được khởi tạo tự động khi kết nối; không cần nhập lại dữ liệu cũ.
+
+UI / UX
+- Xóa select Từng ngày. Lịch chọn một ngày mở báo cáo ngày đó; chọn dải ngày tự tổng hợp dải đã chọn.
+- Trang tổng hợp mặc định tháng hiện tại; trang chi tiết mặc định hôm qua theo giờ Việt Nam. Chưa có báo cáo thì hiện “Chưa gửi”, không mở lại báo cáo cũ.
+- Giữ ngày hoặc dải ngày đã chọn khi đổi nhân viên, kể cả giữa MKT và SALE. Nút “Mới nhất” chọn hôm qua.
+- Ngày báo cáo chi tiết là thông tin cố định cho mọi vai trò. API cũng chặn đổi ngày báo cáo đã lưu.
+- Giữ giao diện điền báo cáo cũ theo thẻ sản phẩm.
+- Xóa hướng dẫn lặp, nút không có tác dụng, bước xác nhận gửi báo cáo dư thừa và thông tin kỹ thuật không cần thiết.
+- Hộp thoại dùng chung cơ chế khóa cuộn nền, giữ focus bàn phím, đóng bằng Escape. Lịch mở ngoài khung để tránh bị cắt.
+- Hộp sửa đơn hàng gọn hơn; thanh lưu và bộ lọc phù hợp màn hình nhỏ.
+- Đóng bảng thêm hàng loạt giữ bản nhập; lưu thành công mới xóa bản nhập.
+- Ghi nhớ đăng nhập: đồng bộ cookie và phiên máy chủ 30 ngày. Không lưu mật khẩu.
+- Tiền USD hiển thị đủ phần thập phân. Tiêu đề bảng ghim cập nhật theo nhịp khung hình khi cuộn.
+
+CẬP NHẬT
+1. Chép đè mã nguồn vào dự án; giữ .env.local và .git của bạn.
+2. Chạy npm install nếu dùng ở máy cá nhân, vì có bổ sung công cụ kiểm tra giao diện.
+3. Đẩy lên đúng nhánh GitHub đang liên kết Vercel để triển khai lại.
+
+KIỂM TRA
+Bộ kiểm tra tự động kiểm tra tính toán, quyền truy cập, trạng thái đơn hẹn, chống lưu trùng và thao tác DOM. Build Next.js được chạy riêng.
+Kiểm tra tích hợp MongoDB thật trong bộ thử độc lập không chạy được ở môi trường này (tiến trình MongoDB bị chặn quyền). Không chạy thử trên dữ liệu production.

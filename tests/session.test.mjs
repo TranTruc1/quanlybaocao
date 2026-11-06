@@ -18,3 +18,7 @@ test('Blocked storage does not crash login or logout',()=>{
  const blocked={getItem(){throw Error('blocked');},setItem(){throw Error('blocked');},removeItem(){throw Error('blocked');}};
  assert.equal(restoreSession(blocked),null);assert.equal(persistSession({token:'x',user:{id:'a'}},blocked),false);assert.doesNotThrow(()=>forgetSession(blocked));
 });
+test('Remembered sessions survive closing a tab and logout clears both stores without storing passwords',()=>{
+ const persistent=storage(),tab=storage();Object.defineProperty(globalThis,'localStorage',{value:persistent,configurable:true});Object.defineProperty(globalThis,'sessionStorage',{value:tab,configurable:true});
+ try{const account={token:'token',user:{id:'u',role:'admin'},password:'never-save'};assert.equal(persistSession(account,true),true);assert.equal(tab.getItem('so-lieu.session'),null);assert.equal(persistent.getItem('so-lieu.session').includes('never-save'),false);assert.deepEqual(restoreSession(),{token:'token',user:{id:'u'},rememberMe:true});persistSession(account,false);assert.equal(persistent.getItem('so-lieu.session'),null);assert.equal(restoreSession().rememberMe,false);forgetSession();assert.equal(restoreSession(),null);}finally{delete globalThis.localStorage;delete globalThis.sessionStorage;}
+});

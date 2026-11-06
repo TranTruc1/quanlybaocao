@@ -1,3 +1,4 @@
+import {sessionMaxAge} from '../../../server/session-policy.js';
 import {NextResponse} from 'next/server.js';
 import {handleRequest} from '../../../server/service.js';
 import {allowedRequest} from '../../../server/request-origin.js';
@@ -18,7 +19,7 @@ export async function POST(request){
   const data=await handleRequest(req,{ip:request.headers.get('x-forwarded-for')?.split(',')[0].trim()||'unknown'});
   const token=req.action==='login'?data.token:null;if(token)data.token='cookie';
   const response=NextResponse.json({ok:true,data},{headers:{'Cache-Control':'no-store'}});
-  if(token)response.cookies.set(cookie,token,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/',maxAge:43200});
+  if(token)response.cookies.set(cookie,token,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/',maxAge:sessionMaxAge(req.payload?.rememberMe)});
   if(req.action==='logout')response.cookies.delete(cookie);
   return response;
  }catch(e){

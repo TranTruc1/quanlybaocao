@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
+    "jsdom": "^31.0.0",
     "mongodb-memory-server": "^11.3.0"
   }
 }
