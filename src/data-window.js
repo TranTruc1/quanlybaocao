@@ -4,7 +4,7 @@ export function mergeDelta(db,next){
  if(next?.kind!=='delta')return next;
  if(!db)throw Error('Chưa tải dữ liệu ban đầu.');
  const result={...db,viewer:next.viewer,apiVersion:next.apiVersion,notifications:next.notifications||db.notifications,reportDateBounds:next.reportDateBounds||db.reportDateBounds};
- for(const key of ['accounts','products','assignments','reports','orders','appointments','targets','reportrequests']){
+ for(const key of ['accounts','products','assignments','reports','orders','appointments','targets','reportrequests','targetrequests']){
   const deleted=new Set(next.removed?.[key]||[]),map=new Map((db[key]||[]).filter(r=>!deleted.has(r.id)).map(r=>[r.id,r]));
   for(const row of next.upsert?.[key]||[]){const old=map.get(row.id);if(old?.revision&&row.revision&&old.revision>row.revision)continue;map.set(row.id,row);}
   result[key]=[...map.values()];

@@ -15,7 +15,7 @@ function setup(){
  let current=initial;
  return {set(table,rows){current[table]=structuredClone(rows);},rows(table){return current[table]||[];},call(action,payload={},user='admin',requestId=randomUUID().replaceAll('-','')){
   const engine=createEngine(current),result=engine.execute({protocol:2,action,payload,token:'token-'+user,requestId});
-  current=Object.fromEntries(['Accounts','Products','Assignments','Sessions','Reports','Orders','Targets','Audit','Notifications','ReportRequests'].map(k=>[k,engine.rows(k)]));return result;
+  current=Object.fromEntries(['Accounts','Products','Assignments','Sessions','Reports','Orders','Targets','Audit','Notifications','ReportRequests','TargetRequests'].map(k=>[k,engine.rows(k)]));return result;
  }};
 }
 test('MKT data ktt and order/upsale counters are server-derived by account/product/day',()=>{
@@ -103,4 +103,42 @@ test('Remembered login and cookie lifetime agree on 30 days while ordinary sessi
  for(const rememberMe of [true,false]){const start=Date.now();x.call('login',{username:'truc',password:'truc123',rememberMe},'u');const sessions=x.rows('Sessions'),expected=sessionMaxAge(rememberMe)*1000;const newest=Math.max(...sessions.map(s=>s.expires));assert.ok(newest>=start+expected&&newest<=Date.now()+expected);if(rememberMe)x.set('Sessions',[]);}
  assert.equal(sessionMaxAge(true),2592000);assert.equal(sessionMaxAge(false),43200);
  const fs=await import('node:fs/promises');const route=await fs.readFile(new URL('../app/api/rpc/route.js',import.meta.url),'utf8');assert.ok(route.includes('maxAge:sessionMaxAge(req.payload?.rememberMe)'));assert.ok(route.includes('httpOnly:true'));
+});
+
+test('Setting a display priority that collides bumps the other user up',()=>{
+ const x=setup();
+ x.call('saveAccount',{id:'u',username:'truc',ownerName:'Trúc',role:'user',priority:1,revision:0});
+ assert.equal(x.rows('Accounts').find(a=>a.id==='u').priority,1);
+ x.call('saveAccount',{id:'v',username:'other',ownerName:'Other',role:'user',priority:1,revision:0});
+ assert.equal(x.rows('Accounts').find(a=>a.id==='v').priority,1);
+ assert.equal(x.rows('Accounts').find(a=>a.id==='u').priority,2);
+ assert.throws(()=>x.call('saveAccount',{id:'v',username:'other',ownerName:'Other',role:'user',priority:0,revision:1}),/Thứ tự hiển thị/);
+});
+test('Admin can create orders for themselves and in bulk',()=>{
+ const x=setup();
+ x.call('saveOrder',{accountId:'admin',productId:'p',date,customerName:'Admin Khách',type:'sale',amountUsd:10,rate:22500});
+ assert.equal(x.rows('Orders').length,1);assert.equal(x.rows('Orders')[0].accountId,'admin');
+ x.call('saveOrdersBulk',{rows:[{accountId:'admin',productId:'q',date,customerName:'Lô admin',type:'sale',amountUsd:5,rate:22500}],batchId:'bulk-admin-1'});
+ assert.equal(x.rows('Orders').length,2);
+ assert.throws(()=>x.call('saveOrder',{accountId:'u',productId:'p',date,customerName:'X',type:'sale',amountUsd:1,rate:22500},'v'),/quyền/);
+});
+test('Admin requests a missing monthly target, the user is notified, and saving targets completes it',()=>{
+ const x=setup(),month='2026-11';
+ x.call('requestTarget',{accountId:'u',month,reason:'Gửi mục tiêu tháng 11'});
+ const req=x.rows('TargetRequests')[0];assert.equal(req.status,'pending');
+ assert.ok(x.rows('Notifications').some(n=>n.recipientId==='u'&&n.entityType==='TargetRequests'&&n.target.page==='targets'&&n.target.month===month));
+ assert.throws(()=>x.call('requestTarget',{accountId:'u',month,reason:''},'u'),/admin/);
+ x.call('saveTargets',{accountId:'u',month,targets:[{productId:'p',revision:0,revenue:1000000,care:0}],salary:0},'u');
+ assert.equal(x.rows('TargetRequests')[0].status,'completed');
+});
+test('Any user can change their own password with the current one; other sessions are signed out',()=>{
+ const x=setup();
+ x.set('Accounts',[{id:'u',role:'user',username:'truc',ownerName:'Trúc',active:true,...passwordRecord('truc123')}]);
+ x.set('Sessions',[{id:sha('token-u'),accountId:'u',expires:Date.now()+3600000},{id:sha('token-u2'),accountId:'u',expires:Date.now()+3600000}]);
+ assert.throws(()=>x.call('changePassword',{currentPassword:'sai123',newPassword:'moi12345'},'u'),/không đúng/);
+ x.call('changePassword',{currentPassword:'truc123',newPassword:'moi12345'},'u');
+ assert.equal(x.rows('Sessions').length,1);
+ assert.equal(x.rows('Sessions')[0].id,sha('token-u'));
+ x.call('login',{username:'truc',password:'moi12345',rememberMe:false},'u');
+ assert.throws(()=>x.call('login',{username:'truc',password:'truc123',rememberMe:false},'u'),/không đúng/);
 });

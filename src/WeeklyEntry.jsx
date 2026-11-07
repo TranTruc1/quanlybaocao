@@ -18,13 +18,13 @@ import {monthWeeks,weekForDate} from './report-week.js';
 const dateLabel=date=>date.split('-').reverse().join('/');
 const mktMetrics=[['funding','Tiền mới nhận / ngân sách cũ','input'],['carryover','Dư chuyển sang'],['transferIn','Nhận từ sản phẩm khác'],['transferOut','Chuyển sang sản phẩm khác'],['budget','Ngân sách khả dụng'],['remaining','Thừa cuối ngày','input'],['spend','Tổng ngân sách đã chi'],['data','Tổng data','input'],['costPerData','Chi phí mess'],['tt','Data tt','input'],['ktt','Data ktt'],['success','Đơn bán hàng','count'],['revenue','Doanh số bán hàng'],['upsale','Đơn Upsale','count'],['upsaleRevenue','Doanh số Upsale'],['careOnlyCount','Đơn chăm sóc','count'],['careOnlyRevenue','Doanh số chăm sóc'],['orderCount','Tổng đơn','count'],['appointments','Đơn hẹn','input'],['late','Rep chậm','input'],['costRatio','Tỷ lệ chi phí/DS','percent'],['goal','Mục tiêu doanh thu'],['achieved','Đạt mục tiêu','percent']];
 const saleMetrics=[['data','Tổng data','input'],['tt','Data tương tác','input'],['ktt','Data ktt'],['saleCount','Đơn bán hàng','count'],['upsaleCount','Đơn Upsale','count'],['careCount','Đơn chăm sóc','count'],['orders','Tổng đơn','count'],['revenue','Doanh số'],['conversion','Tỉ lệ chốt','percent']];
-const valueOf=(row,key)=>key==='funding'?Number(row.received??row.budget??0):Number(row[key]||0);
+const valueOf=(row,key)=>key==='funding'?Number(row.received??row.budget??0):key==='goal'?Number(row.goal||0)+Number(row.careGoal||0):Number(row[key]||0);
 const format=(value,type)=>type==='percent'?pct(value):type==='count'?countFormat(value):money(value);
 function totalValue(rows,key){
  const sum=k=>rows.reduce((n,row)=>n+valueOf(row,k),0);
  if(key==='costPerData')return sum('data')?sum('spend')/sum('data'):0;
  if(key==='costRatio')return sum('revenue')+sum('care')?sum('spend')/(sum('revenue')+sum('care')):0;
- if(key==='achieved')return sum('goal')?sum('revenue')/sum('goal'):0;
+ if(key==='achieved')return sum('goal')?(sum('revenue')+sum('care'))/sum('goal'):0;
  if(key==='conversion')return sum('data')?sum('orders')/sum('data'):0;
  return sum(key);
 }

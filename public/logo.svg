@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Sổ Liệu">
+  <rect x="2" y="2" width="92" height="92" rx="22" fill="#17644e"/>
+  <path d="M48 32C40 24 30 24 22 27v41c8-3 18-3 26 5 8-8 18-8 26-5V27c-8-3-18-3-26 5Z" fill="#ffffff"/>
+  <line x1="48" y1="32" x2="48" y2="73" stroke="#17644e" stroke-width="3.5" stroke-linecap="round"/>
+  <polyline points="28,56 38,48 46,51 56,40 68,34" fill="none" stroke="#17644e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M61.5 35.5 68 34l-1.5 6.5" fill="none" stroke="#17644e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

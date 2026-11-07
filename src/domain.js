@@ -47,17 +47,18 @@ export function productSummary(db, range, account='all', product='all') {
  const stats=aggregate(db,range,account,product);
  const balances=closingBalances(db.balanceReports||db.reports,range[1],account,product);
  const keys=['spend','data','tt','ktt','success','upsale','revenue','care','totalRevenue','appointments','orderCount','careOrderCount','careOnlyCount','upsaleRevenue','careOnlyRevenue'];
- const empty=()=>Object.fromEntries([...keys,'goal','remaining'].map(k=>[k,0]));
+ const empty=()=>Object.fromEntries([...keys,'goal','careGoal','remaining'].map(k=>[k,0]));
  const products=db.products.filter(p=>product==='all'||p.id===product);
  const columns=products.map(p=>{
   const sums=empty();
   for(const row of stats.detail.filter(r=>r.productId===p.id))for(const k of keys)sums[k]+=row[k];
   sums.remaining=balances.filter(b=>b.productId===p.id).reduce((n,b)=>n+b.remaining,0);
   sums.goal=(db.targets||[]).filter(t=>t.productId===p.id&&(account==='all'||t.accountId===account)&&t.month>=range[0].slice(0,7)&&t.month<=range[1].slice(0,7)).reduce((v,t)=>v+Number(t.revenue||0),0);
-  return {id:p.id,label:p.name,...sums,costPerData:divide(sums.spend,sums.data),costRatio:divide(sums.spend,sums.revenue+sums.care),achieved:divide(sums.revenue,sums.goal)};
+  sums.careGoal=(db.targets||[]).filter(t=>t.productId===p.id&&(account==='all'||t.accountId===account)&&t.month>=range[0].slice(0,7)&&t.month<=range[1].slice(0,7)).reduce((v,t)=>v+Number(t.care||0),0);
+  return {id:p.id,label:p.name,...sums,totalGoal:sums.goal+sums.careGoal,costPerData:divide(sums.spend,sums.data),costRatio:divide(sums.spend,sums.revenue+sums.care),achieved:divide(sums.totalRevenue,sums.goal+sums.careGoal)};
  });
- const total=columns.reduce((s,c)=>{for(const k of [...keys,'goal','remaining'])s[k]+=c[k];return s;},empty());
- return {columns,total:{id:'total',label:'Tổng SP',...total,costPerData:divide(total.spend,total.data),costRatio:divide(total.spend,total.revenue+total.care),achieved:divide(total.revenue,total.goal)}};
+ const total=columns.reduce((s,c)=>{for(const k of [...keys,'goal','careGoal','remaining'])s[k]+=c[k];return s;},empty());
+ return {columns,total:{id:'total',label:'Tổng SP',...total,totalGoal:total.goal+total.careGoal,costPerData:divide(total.spend,total.data),costRatio:divide(total.spend,total.revenue+total.care),achieved:divide(total.totalRevenue,total.goal+total.careGoal)}};
 }
 
 export function summarizeTargets(db,account,month){
@@ -69,10 +70,10 @@ export function summarizeTargets(db,account,month){
   const detail=stats.detail.filter(r=>r.productId===product.id);
   const revenue=detail.reduce((n,r)=>n+r.revenue,0),care=detail.reduce((n,r)=>n+r.care,0);
   const goal=Number(target?.revenue||0),careGoal=Number(target?.care||0);
-  return {product,target,...math,goal,careGoal,revenue,care,achieved:divide(revenue,goal),editable:!!target||db.assignments.some(a=>a.active&&a.accountId===account&&a.productId===product.id)};
+  return {product,target,...math,goal,careGoal,revenue,care,achieved:divide(revenue+care,goal+careGoal),editable:!!target||db.assignments.some(a=>a.active&&a.accountId===account&&a.productId===product.id)};
  });
  const total=rows.reduce((s,r)=>{for(const k of ['goal','orders','revenue','careGoal','care'])s[k]+=r[k];return s;},{goal:0,orders:0,revenue:0,careGoal:0,care:0});
- return {rows,total:{...total,perDay:divide(total.orders,targetMath(null,{priceUsd:0,rate:0},month).days),achieved:divide(total.revenue,total.goal)}};
+ return {rows,total:{...total,perDay:divide(total.orders,targetMath(null,{priceUsd:0,rate:0},month).days),achieved:divide(total.revenue+total.care,total.goal+total.careGoal)}};
 }
 export const decimal = n => new Intl.NumberFormat('vi-VN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
 
@@ -82,3 +83,36 @@ export function carryoverBefore(reports,account,product,date){
  return {amount:Number((previous?.status==='submitted'?previous?.entries:previous?.postedEntries)?.find(e=>e.productId===product)?.remaining||0),date:previous?.date||null};
 }
 export function normalizeReportBudgets(reports){return normalizeBudgets(reports);}
+
+// Month total revenue (sales + care) per product for one account, or all
+// accounts when account is 'all'. Used to base "Đạt mục tiêu" on the whole
+// selected month instead of a single day.
+export function monthRevenueByProduct(db,account,month){
+ const stats=aggregate(db,periodRange('month','','','',month),account),map=new Map();
+ for(const r of stats.detail)map.set(r.productId,(map.get(r.productId)||0)+Number(r.revenue||0)+Number(r.care||0));
+ return map;
+}
+
+// Display order of accounts: Admins first, then MKT, then SALE, each by the
+// priority number the admin sets (accounts without one go last, keeping their
+// current relative order).
+export function accountPriority(a){return Number.isFinite(a?.priority)?a.priority:Infinity;}
+export function sortAccounts(accounts){
+ const group=a=>a?.role==='admin'?0:a?.role==='user'?1:a?.role==='sale'?2:3;
+ return [...(accounts||[])].sort((a,b)=>group(a)-group(b)||accountPriority(a)-accountPriority(b));
+}
+
+// Latest date (on or before endDate) with real activity for one account/product:
+// a report entry with data, money in/out or orders, or orders on their own.
+// Empty entries left over from a submitted report do not count.
+export function latestActiveReportDate(db,accountId,productId,endDate){
+ let latest=null;
+ const active=e=>Number(e.received||0)>0||Number(e.data||0)>0||Number(e.tt||0)>0||Number(e.budget||0)-Number(e.remaining||0)>0||Number(e.success||0)>0||Number(e.upsale||0)>0||Number(e.appointments||0)>0||Number(e.late||0)>0;
+ for(const r of db.reports||[]){
+  if(r.accountId!==accountId||r.date>endDate)continue;
+  const e=(r.entries||[]).find(x=>x.productId===productId);
+  if(e&&active(e))latest=!latest||r.date>latest?r.date:latest;
+ }
+ for(const o of db.orders||[])if((o.accountId===accountId||o.saleAccountId===accountId)&&o.productId===productId&&o.date<=endDate&&!o.isBounced)latest=!latest||o.date>latest?o.date:latest;
+ return latest;
+}

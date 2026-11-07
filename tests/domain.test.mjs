@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {aggregate,netSpend,divide,periodRange,targetMath,validateEntries,fields,productSummary,previousDay,summarizeTargets,carryoverBefore,normalizeReportBudgets} from '../src/domain.js';
+import {aggregate,netSpend,divide,periodRange,targetMath,validateEntries,fields,productSummary,previousDay,summarizeTargets,carryoverBefore,normalizeReportBudgets,latestActiveReportDate,monthRevenueByProduct,sortAccounts} from '../src/domain.js';
 const entry=(productId,extra={})=>({productId,...Object.fromEntries(fields.map(([k])=>[k,0])),...extra});
 test('Carryover budget is spent once across days',()=>{const rows=[entry('p',{budget:5000000,remaining:3000000}),entry('p',{budget:3000000,remaining:1000000}),entry('p',{budget:5000000,remaining:0})];assert.equal(rows.reduce((s,e)=>s+netSpend(e),0),9000000);});
 test('Reports use submitted rows, scoped account/product and weighted cost',()=>{const db={reports:[{accountId:'a',date:'2026-11-01',status:'submitted',entries:[entry('p',{budget:1100000,remaining:100000,data:100}),entry('q',{data:30})]},{accountId:'a',date:'2026-11-02',status:'submitted',entries:[entry('p',{budget:1000000,data:200})]},{accountId:'a',date:'2026-11-03',status:'draft',entries:[entry('p',{data:9999,budget:99999999})]},{accountId:'b',date:'2026-11-01',status:'submitted',entries:[entry('p',{data:40})]}],orders:[{accountId:'a',date:'2026-11-01',productId:'p',type:'sale',amountVnd:10000000},{accountId:'a',date:'2026-11-01',productId:'p',type:'care',amountVnd:3000000},{accountId:'b',date:'2026-11-01',productId:'p',type:'sale',amountVnd:999}]};const r=aggregate(db,['2026-11-01','2026-11-30'],'a','p');assert.equal(r.total.data,300);assert.equal(r.total.spend,2000000);assert.equal(r.costPerData,2000000/300);assert.equal(r.costRatio,2000000/13000000);assert.equal(r.total.care,3000000);assert.equal(r.total.revenue,10000000);assert.equal(r.accountDays,2);assert.equal(aggregate(db,['2026-11-01','2026-11-30']).accountDays,3);});
@@ -29,6 +29,23 @@ test('Product matrix totals use net budget, weighted cost, scoped targets and ac
  const q=productSummary(db,['2026-11-01','2026-11-30'],'a','q');assert.equal(q.columns.length,1);assert.equal(q.total.goal,290000000);assert.equal(q.total.costRatio,4200000/25650000);
 });
 
+test('Achievement divides total sales by total target, including care revenue and care goal',()=>{
+ const db={products:[{id:'p',name:'P'}],reports:[{accountId:'a',date:'2026-11-01',status:'submitted',entries:[entry('p',{budget:1000000,remaining:0,data:10})]}],orders:[{accountId:'a',date:'2026-11-01',productId:'p',type:'sale',amountVnd:40000},{accountId:'a',date:'2026-11-01',productId:'p',type:'care',amountVnd:30000}],targets:[{accountId:'a',productId:'p',month:'2026-11',revenue:100000,care:50000}]};
+ const s=productSummary(db,['2026-11-01','2026-11-30'],'a');assert.equal(s.total.totalRevenue,70000);assert.equal(s.total.goal,100000);assert.equal(s.total.careGoal,50000);assert.equal(s.total.totalGoal,150000);assert.equal(s.total.achieved,70000/150000);assert.equal(s.columns[0].achieved,70000/150000);
+});
+
+test('Latest active report date ignores empty entries and counts orders',()=>{
+ const db={reports:[
+  {accountId:'a',date:'2026-11-01',status:'submitted',entries:[entry('p',{data:5}),entry('q',{})]},
+  {accountId:'a',date:'2026-11-03',status:'submitted',entries:[entry('p',{}),entry('q',{data:2})]},
+  {accountId:'a',date:'2026-11-05',status:'submitted',entries:[entry('p',{}),entry('q',{})]},
+ ],orders:[{accountId:'a',date:'2026-11-04',productId:'p',type:'sale',amountVnd:1000}]};
+ assert.equal(latestActiveReportDate(db,'a','p','2026-11-06'),'2026-11-04');
+ assert.equal(latestActiveReportDate(db,'a','q','2026-11-06'),'2026-11-03');
+ assert.equal(latestActiveReportDate(db,'a','z','2026-11-06'),null);
+ assert.equal(latestActiveReportDate(db,'a','p','2026-11-02'),'2026-11-01');
+});
+
 test('Default report date is yesterday in Vietnam across month/year/leap boundaries',()=>{
  assert.equal(previousDay(new Date('2026-11-04T02:00:00Z')),'2026-11-03');
  assert.equal(previousDay(new Date('2026-10-31T18:00:00Z')),'2026-10-31');
@@ -49,7 +66,7 @@ test('Reopened cash balance stays posted until resubmission; invalid future bala
 });
 test('Targets footer sums required orders and divides total revenue by total goal',()=>{
  const db={products:[{id:'p',priceUsd:100,rate:1000},{id:'q',priceUsd:200,rate:1000}],assignments:[{accountId:'a',productId:'p',active:true},{accountId:'a',productId:'q',active:true}],targets:[{accountId:'a',productId:'p',month:'2026-11',revenue:250000,care:10000},{accountId:'a',productId:'q',month:'2026-11',revenue:800000,care:20000},{accountId:'b',productId:'q',month:'2026-11',revenue:999999}],reports:[],orders:[{accountId:'a',productId:'p',date:'2026-11-01',type:'sale',amountVnd:100000},{accountId:'a',productId:'q',date:'2026-11-01',type:'sale',amountVnd:200000},{accountId:'a',productId:'q',date:'2026-11-01',type:'care',amountVnd:50000}]};
- const {rows,total}=summarizeTargets(db,'a','2026-11');assert.equal(rows.length,2);assert.equal(total.goal,1050000);assert.equal(total.orders,7);assert.equal(total.perDay,7/30);assert.equal(total.revenue,300000);assert.equal(total.achieved,300000/1050000);assert.equal(total.careGoal,30000);assert.equal(total.care,50000);assert.equal(summarizeTargets(db,'b','2026-12').total.achieved,0);
+ const {rows,total}=summarizeTargets(db,'a','2026-11');assert.equal(rows.length,2);assert.equal(total.goal,1050000);assert.equal(total.orders,7);assert.equal(total.perDay,7/30);assert.equal(total.revenue,300000);assert.equal(total.achieved,350000/1080000);assert.equal(rows[0].achieved,100000/260000);assert.equal(rows[1].achieved,250000/820000);assert.equal(total.careGoal,30000);assert.equal(total.care,50000);assert.equal(summarizeTargets(db,'b','2026-12').total.achieved,0);
 });
 
 test('Bounced sale and care orders subtract all counts/revenue; unmarking restores their original weights',()=>{
@@ -71,4 +88,15 @@ test('Product closing balances use the latest value by account/product through t
  assert.equal(s.columns[0].remaining,300);assert.equal(s.columns[1].remaining,40);assert.equal(s.total.remaining,340);
  assert.equal(productSummary(db,['2026-11-04','2026-11-04'],'a').total.remaining,40);
  assert.equal(productSummary(db,['2026-11-02','2026-11-02'],'b','p').total.remaining,100);
+});
+
+test('Month revenue sums sale and care orders across the whole month',()=>{
+ const db={reports:[],orders:[{accountId:'a',productId:'p',date:'2026-11-02',type:'sale',amountVnd:100},{accountId:'a',productId:'p',date:'2026-11-28',type:'care',amountVnd:50},{accountId:'a',productId:'q',date:'2026-11-28',type:'sale',amountVnd:70},{accountId:'a',productId:'p',date:'2026-10-31',type:'sale',amountVnd:999},{accountId:'a',productId:'p',date:'2026-11-28',type:'sale',isBounced:true,amountVnd:500}]};
+ const m=monthRevenueByProduct(db,'a','2026-11');
+ assert.equal(m.get('p'),150);assert.equal(m.get('q'),70);assert.equal(m.get('missing'),undefined);
+});
+test('Accounts sort Admin first, then MKT, then SALE, each by priority number',()=>{
+ const accounts=[{id:'s1',role:'sale',priority:1},{id:'m1',role:'user',priority:2},{id:'a1',role:'admin'},{id:'m2',role:'user',priority:1},{id:'s2',role:'sale'},{id:'a2',role:'admin',priority:5}];
+ assert.deepEqual(sortAccounts(accounts).map(a=>a.id),['a2','a1','m2','m1','s1','s2']);
+ assert.deepEqual(sortAccounts([{id:'x',role:'user'},{id:'y',role:'user',priority:1}]).map(a=>a.id),['y','x']);
 });

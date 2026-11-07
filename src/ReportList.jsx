@@ -3,7 +3,9 @@ import WindowGate from './DataWindow.jsx';
 import ReportHistory from './ReportHistory.jsx';
 import {ActionButton} from './Operations.jsx';
 import React,{useState,useEffect,useCallback} from 'react';
-import {periodRange,inRange,money} from './domain.js';
+import {periodRange,inRange,money,accountPriority} from './domain.js';
+import {isEmployee} from './roles.js';
+import {missingReportDates} from './report-policy.js';
 import ReportCards from './ReportCards.jsx';
 import InlineReportEditor from './InlineReportEditor.jsx';
 import ProductSummary from './ProductSummary.jsx';
@@ -22,21 +24,27 @@ export default function ReportList({db,user,mutate,notify,busy,onOpen,FilterComp
  const updateDirty=useCallback(value=>{if(dirtyRef)dirtyRef.current=value;},[dirtyRef]);
  function leave(action){updateDirty(false);action();}
  const range=periodRange(filter.mode,filter.date,filter.from,filter.to,filter.month);
+ // Chi tiết theo ngày cần dữ liệu cả tháng (doanh số tháng, ngày báo cáo gần nhất).
+ const windowRange=filter.mode==='day'&&selectedAccount?periodRange('month','','','',filter.date.slice(0,7)):range;
  const reports=db.reports.filter(r=>!r._carryContext&&inRange(r.date,range)&&(user.role==='admin'||r.accountId===user.id)&&(filter.account==='all'||r.accountId===filter.account)&&(filter.product==='all'||r.entries.some(e=>e.productId===filter.product))).sort((a,b)=>b.date.localeCompare(a.date)||(b.updatedAt||'').localeCompare(a.updatedAt||''));
  const own=x=>(user.role==='admin'||x.accountId===user.id)&&(filter.account==='all'||x.accountId===filter.account);
  const scopedDb={...db,appointments:(db.appointments||[]).filter(own),assignments:db.assignments.filter(own),targets:db.targets.filter(own),orders:db.orders.filter(o=>(user.role==='admin'||o.accountId===user.id)&&(filter.account==='all'||o.accountId===filter.account))};
  const groups=reportGroups(scopedDb,reports,range,filter.product,{includeOrderOnly:true,includeAccounts:true}),summaryDb=combinedReportDb(scopedDb,groups),selected=groups.find(g=>g.accountId===selectedAccount)||(selectedAccount?{accountId:selectedAccount,reports:[],db:scopedDb}:null);
+ const sortedGroups=[...groups].sort((a,b)=>accountPriority(db.accounts.find(x=>x.id===a.accountId))-accountPriority(db.accounts.find(x=>x.id===b.accountId)));
+ // Chấm đỏ: user báo cáo thiếu ngày trong 5 ngày gần nhất (admin không báo cáo nên không có chấm).
+ const missingAccountIds=db.accounts.filter(a=>isEmployee(a)&&a.active&&db.assignments.some(x=>x.accountId===a.id&&x.active)).filter(a=>missingReportDates(db.reports,a.id).length>0).map(a=>a.id);
  const inlineRecord=selected?.reports.find(r=>r.id===inlineDay)||selected?.reports[0];
  useEffect(()=>{onViewChange?.({filter,view,selectedAccount,inlineDay});},[filter,view,selectedAccount,inlineDay,onViewChange]);
  function changeFilter(next){leave(()=>{setStoredDay('');setFilter(next);onRouteChange?.({...route,page:'overview',day:null},{replace:true});});}
- return <><div className="report-sticky-controls">{employeeTabs}<FilterComponent {...{db,user,filter,setFilter:changeFilter}} calendarAccount={selectedAccount||undefined} hideAccount={user.role==='admin'&&!!route}/></div><WindowGate range={range}>{!selected&&SummaryComponent&&<div className="report-list-controls"><div className="segmented" aria-label="Cách xem báo cáo">{[['accounts','Theo nhân viên'],['products','Theo sản phẩm']].map(([id,label])=><ActionButton className={view===id?'selected':''} key={id} onClick={()=>setView(id)}>{label}</ActionButton>)}</div></div>}
+ return <><div className="report-sticky-controls">{employeeTabs}<FilterComponent {...{db,user,filter,setFilter:changeFilter}} calendarAccount={selectedAccount||undefined} hideAccount={user.role==='admin'&&!!route}/></div><WindowGate range={windowRange}>{!selected&&SummaryComponent&&<div className="report-list-controls"><div className="segmented" aria-label="Cách xem báo cáo">{[['accounts','Theo nhân viên'],['products','Theo sản phẩm']].map(([id,label])=><ActionButton className={view===id?'selected':''} key={id} onClick={()=>setView(id)}>{label}</ActionButton>)}</div></div>}
 
  {!selected&&SummaryComponent&&<SummaryComponent db={summaryDb} user={user} filter={filter}/>}
  {selected?<> 
+  {SummaryComponent&&<SummaryComponent db={summaryDb} user={user} filter={filter}/>}
   {filter.mode!=='day'?<ProductSummary db={selected.db} range={range} account={selected.accountId} product={filter.product}/>:inlineRecord&&<InlineReportEditor key={inlineRecord.id} record={inlineRecord} db={db} user={user} product={filter.product} mutate={mutate} notify={notify} onDirtyChange={updateDirty} onHistory={()=>setHistory(inlineRecord)}/>}
 
   {!inlineRecord&&filter.mode==='day'&&<ProductSummary title="Chi tiết theo sản phẩm" status="Chưa gửi" db={selected.db} range={range} account={selected.accountId} product={filter.product}/>}
 
- </>:<>{view==='products'&&SummaryComponent?<ProductSummary db={summaryDb} range={range} account={filter.account} product={filter.product}/>:<ReportCards groups={groups} onSelect={setSelectedAccount}/>}{groups.length>0&&!SummaryComponent&&<div className="panel report-list-total"><b>Tổng {groups.length} nhân viên · {reports.length} bảng</b><span>Tổng data: <strong>{money(groups.reduce((n,g)=>n+g.total.data,0))}</strong></span><span>Chi thực tế: <strong>{money(groups.reduce((n,g)=>n+g.total.spend,0))} đ</strong></span></div>}</>}
+ </>:<>{view==='products'&&SummaryComponent?<ProductSummary db={summaryDb} range={range} account={filter.account} product={filter.product}/>:<ReportCards groups={sortedGroups} onSelect={setSelectedAccount} missingAccountIds={missingAccountIds}/>}{groups.length>0&&!SummaryComponent&&<div className="panel report-list-total"><b>Tổng {groups.length} nhân viên · {reports.length} bảng</b><span>Tổng data: <strong>{money(groups.reduce((n,g)=>n+g.total.data,0))}</strong></span><span>Chi thực tế: <strong>{money(groups.reduce((n,g)=>n+g.total.spend,0))} đ</strong></span></div>}</>}
  {history&&<ReportHistory db={db} report={history} onClose={()=>setHistory(null)}/>}</WindowGate></>
 }

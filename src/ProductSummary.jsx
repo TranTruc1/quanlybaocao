@@ -8,7 +8,7 @@ const metrics=[
  ['spend','Tổng ngân sách'],['remaining','Ngân sách thừa cuối kỳ'],['data','Tổng data'],['costPerData','Chi phí mess'],
  ['tt','Data tt'],['ktt','Data ktt'],['success','Đơn bán hàng','count'],['revenue','Doanh số bán hàng'],['upsale','Đơn Upsale','count'],['upsaleRevenue','Doanh số Upsale'],['careOnlyCount','Đơn chăm sóc','count'],['careOnlyRevenue','Doanh số chăm sóc'],['orderCount','Tổng đơn','count'],['totalRevenue','Tổng doanh số'],['appointments','Đơn hẹn','count'],
  ['costRatio','Tỷ lệ chi phí/DS','percent'],
- ['goal','Mục tiêu'],['achieved','Đạt','percent']
+ ['totalGoal','Mục tiêu'],['achieved','Đạt','percent']
 ];
 export default function ProductSummary({db,range,account,product,title='Tổng kết theo sản phẩm',status}) {
  const {columns,total}=productSummary(db,range,account,product);

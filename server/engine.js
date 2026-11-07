@@ -4,7 +4,7 @@ import {sessionMaxAge} from './session-policy.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {passwordRecord,passwordDigest,equalSecret} from './passwords.js';
 import {normalizeBudgets} from '../src/budget-transfers.js';
-export const TABLES=['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','Sessions','Audit','Notifications','ReportRequests'];
+export const TABLES=['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','Sessions','Audit','Notifications','ReportRequests','TargetRequests'];
 export const sha=s=>createHash('sha256').update(s).digest('base64').replaceAll('+','-').replaceAll('/','_');
 export function createEngine(initial={},options={}){
  var FIELDS_=['budget','remaining','data','tt','ktt','success','upsale','appointments','late'];
@@ -27,7 +27,7 @@ export function createEngine(initial={},options={}){
  function careOrder_(o){return o.type==='care'||o.type==='upsale'||o.isCare===true;}
  function weightOrder_(o){return o.isSplit===true?0.5:1;}
  function normalizeReportBudgets_(reports){try{return normalizeBudgets(reports);}catch(e){throw applicationError_(e.message);}}
-function mutate_(action,p,user){
+function mutate_(action,p,user,sessionId){
   if(extraMutation_(action,p,user))return;
   if(action==='saveReport') {
     date_(p.date);var accountId=owner_(p.accountId,user);var account=get_('Accounts',accountId);if(!account||!account.active)throw Object.assign(new Error('Account không hoạt động.'),{code:'UNAUTHENTICATED'});
@@ -63,7 +63,7 @@ function mutate_(action,p,user){
   } else if(action==='saveOrder') {
     put_('Orders',prepareOrder_(p,user));
   } else if(action==='saveOrdersBulk'||action==='saveProductsBulk') {
-    var productBatch=action==='saveProductsBulk';if(productBatch)admin_(user);else if(user.role==='admin')throw applicationError_('Admin chỉ sửa đơn đã có.');
+    var productBatch=action==='saveProductsBulk';if(productBatch)admin_(user);
     if(!Array.isArray(p.rows)||p.rows.length<1||p.rows.length>50||typeof p.batchId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(p.batchId))throw applicationError_('Lô không hợp lệ; tối đa 50 dòng.');
     var fingerprint=sha_(JSON.stringify(p.rows));var saved=read_('Audit').find(function(a){return a.actorId===user.id&&a.action==='batchSaved'&&a.details.batchId===p.batchId;});
     if(saved){if(saved.details.fingerprint!==fingerprint)throw applicationError_('Lô này đã lưu với nội dung khác. Tải lại danh sách trước khi tạo lô mới.');return;}
@@ -78,6 +78,17 @@ function mutate_(action,p,user){
     var o=get_('Orders',p.id);if(!o)throw applicationError_('Không tìm thấy đơn.');if(user.role!=='admin'&&o.accountId!==user.id&&o.saleAccountId!==user.id)throw applicationError_('Không có quyền xóa đơn.');remove_('Orders',p.id);
   } else if(action==='saveProduct') {
     var product=prepareProduct_(p,user),assignments=prepareProductAssignments_(p,product.id);put_('Products',product);assignments.forEach(function(a){put_('Assignments',a);});
+  } else if(action==='changePassword') {
+   var currentPassword=String(p.currentPassword||''),nextPassword=String(p.newPassword||'');
+   if(nextPassword.length<6||nextPassword.length>20)throw applicationError_('Mật khẩu mới cần 6–20 ký tự.');
+   if(nextPassword===currentPassword)throw applicationError_('Mật khẩu mới phải khác mật khẩu hiện tại.');
+   var account=get_('Accounts',user.id);
+   if(!account||!account.passwordHash)throw applicationError_('Account chưa đặt mật khẩu. Liên hệ admin để đặt lại.');
+   var digest;
+   try{digest=passwordDigest_(currentPassword,account);}catch(e){throw applicationError_('Mật khẩu hiện tại không đúng.');}
+   if(!equal_(digest,account.passwordHash))throw applicationError_('Mật khẩu hiện tại không đúng.');
+   Object.assign(account,passwordRecord_(nextPassword));account.revision=(account.revision||0)+1;put_('Accounts',account);
+   read_('Sessions').filter(function(s){return s.accountId===account.id&&s.id!==sessionId;}).forEach(function(s){remove_('Sessions',s.id);});
   } else if(action==='saveAccount') {
     admin_(user);var old=p.id?get_('Accounts',p.id):null;if(p.id&&!old)throw applicationError_('Không tìm thấy account.');
     if(old&&old.deletedAt)throw applicationError_('Khôi phục account trước khi chỉnh sửa.');checkAccount_(p,!old);if(old&&Number(p.revision||0)!==Number(old.revision||0))throw conflict_();var username=String(p.username).trim();
@@ -85,8 +96,11 @@ function mutate_(action,p,user){
     if(['admin','user','sale'].indexOf(nextRole)<0)throw applicationError_('Role phải là admin, user (MKT) hoặc sale (SALE).');
     if(old&&old.role==='admin'&&old.active&&nextRole!=='admin'&&read_('Accounts').filter(function(a){return a.role==='admin'&&a.active;}).length<=1)throw applicationError_('Không thể hạ quyền admin cuối cùng đang hoạt động.');
     if(read_('Accounts').some(function(a){return a.username.toLowerCase()===username.toLowerCase()&&a.id!==p.id;}))throw applicationError_('Tên đăng nhập đã tồn tại.');
-    var record=Object.assign({},old||{id:newId_(),role:'user',active:true},{username:username,ownerName:p.ownerName.trim(),role:nextRole,revision:(old?old.revision||0:0)+1});
+    var nextPriority=Object.prototype.hasOwnProperty.call(p,'priority')?(p.priority===''||p.priority===null||p.priority===undefined?null:Number(p.priority)):(old?old.priority:undefined);
+    if(nextPriority!==null&&nextPriority!==undefined&&(!Number.isInteger(nextPriority)||nextPriority<1||nextPriority>1000))throw applicationError_('Thứ tự hiển thị phải là số nguyên từ 1 trở lên.');
+    var record=Object.assign({},old||{id:newId_(),role:'user',active:true},{username:username,ownerName:p.ownerName.trim(),role:nextRole,priority:nextPriority,revision:(old?old.revision||0:0)+1});
     if(p.password)Object.assign(record,passwordRecord_(p.password));put_('Accounts',record);
+    if(Number.isFinite(record.priority)){var bumpNext=record.priority;var bumpOthers=read_('Accounts').filter(function(a){return a.id!==record.id&&Number.isFinite(a.priority);}).sort(function(a,b){return a.priority-b.priority;});for(var bumpI=0;bumpI<bumpOthers.length;bumpI++){var bumped=bumpOthers[bumpI];if(bumped.priority===bumpNext){bumped.priority=bumpNext+1;bumped.revision=(bumped.revision||0)+1;put_('Accounts',bumped);bumpNext=bumped.priority;}else if(bumped.priority>bumpNext)break;}}
     if(old&&(p.password||old.role!==nextRole))read_('Sessions').filter(function(s){return s.accountId===old.id;}).forEach(function(s){remove_('Sessions',s.id);});
     if(old&&old.role!==nextRole)audit_(user.id,'roleChanged',{accountId:record.id,beforeRole:old.role,afterRole:nextRole});
   } else if(action==='deleteAccount'||action==='restoreAccount') {
@@ -120,11 +134,12 @@ function mutate_(action,p,user){
     if(!get_('Accounts',p.accountId))throw applicationError_('Không tìm thấy account.');
     var existing=read_('Targets');var ids=Object.create(null);var records=p.targets.map(function(t){if(ids[t.productId])throw applicationError_('Sản phẩm mục tiêu bị trùng.');ids[t.productId]=true;var product=get_('Products',t.productId);if(!product)throw applicationError_('Không tìm thấy sản phẩm.');var old=existing.find(function(x){return x.accountId===p.accountId&&x.productId===t.productId&&x.month===p.month;});if(old&&Number(t.revision||0)!==Number(old.revision||0))throw conflict_();if(!old||user.role!=='admin')checkProduct_(p.accountId,t.productId);return {id:old?old.id:newId_(),revision:(old?old.revision||0:0)+1,accountId:p.accountId,productId:t.productId,month:p.month,revenue:num_(t.revenue,false),care:num_(t.care,false),salary:salary,priceUsd:old?old.priceUsd:product.priceUsd,rate:old?old.rate:product.rate,updatedAt:now_()};});
     records.forEach(function(t){put_('Targets',t);});
+    read_('TargetRequests').filter(function(r){return r.accountId===p.accountId&&r.month===p.month&&r.status==='pending';}).forEach(function(r){r.status='completed';r.completedAt=now_();r.completedBy=user.id;r.revision++;put_('TargetRequests',r);});
   } else throw applicationError_('Thao tác không được hỗ trợ.');
 }
 
 function visible_(user,scope){
-  var db={apiVersion:2,viewer:publicAccount_(user),accounts:read_('Accounts').map(publicAccount_),products:read_('Products'),assignments:read_('Assignments'),reportrequests:read_('ReportRequests').filter(r=>user.role==='admin'||r.accountId===user.id),reports:read_('Reports'),orders:read_('Orders'),appointments:read_('Appointments'),targets:read_('Targets'),notifications:notificationFeed_(user,0),audit:scope?[]:(user.role==='admin'?read_('Audit'):[])};
+  var db={apiVersion:2,viewer:publicAccount_(user),accounts:read_('Accounts').map(publicAccount_),products:read_('Products'),assignments:read_('Assignments'),reportrequests:read_('ReportRequests').filter(r=>user.role==='admin'||r.accountId===user.id),targetrequests:read_('TargetRequests').filter(r=>user.role==='admin'||r.accountId===user.id),reports:read_('Reports'),orders:read_('Orders'),appointments:read_('Appointments'),targets:read_('Targets'),notifications:notificationFeed_(user,0),audit:scope?[]:(user.role==='admin'?read_('Audit'):[])};
   if(user.role!=='admin'){
     var ownAssignments=db.assignments.filter(function(a){return a.accountId===user.id;}),ownProducts=Object.create(null);
     ownAssignments.filter(function(a){return a.active;}).forEach(function(a){ownProducts[a.productId]=true;});
@@ -155,7 +170,7 @@ function scope_(p){
 }
 function delta_(user,changes,removed){
   var result={notifications:notificationFeed_(user,0),kind:'delta',apiVersion:2,viewer:publicAccount_(user),upsert:{},removed:{}};
-  ['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','ReportRequests'].forEach(function(table){var ids=(changes||{})[table]||[],rows=ids.map(function(id){return get_(table,id);}).filter(Boolean);
+  ['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','ReportRequests','TargetRequests'].forEach(function(table){var ids=(changes||{})[table]||[],rows=ids.map(function(id){return get_(table,id);}).filter(Boolean);
     if(user.role!=='admin')rows=rows.filter(function(r){return table==='Accounts'?r.id===user.id:table==='Products'?read_('Assignments').some(function(a){return a.active&&a.accountId===user.id&&a.productId===r.id;}):(table==='Orders'||table==='Appointments')&&user.role==='sale'?r.saleAccountId===user.id:r.accountId===user.id;});
     if(table==='Accounts')rows=rows.map(publicAccount_);if(table==='Reports')rows=rows.map(function(r){r._normalized=true;return r;});
     result.upsert[table.toLowerCase()]=rows;result.removed[table.toLowerCase()]=(removed||{})[table]||[];
@@ -167,7 +182,7 @@ function conflict_(){return Object.assign(new Error('Dữ liệu vừa được 
 
 function requestUser_(req){var user=session_(req.token);if(req.uiRole==='admin'&&user.role!=='admin'){var err=new Error('Không đủ quyền để thực hiện.');err.code='FORBIDDEN';throw err;}return user;}
 function session_(token){if(typeof token!=='string'||token.length>200)throw Object.assign(new Error('Vui lòng đăng nhập.'),{code:'UNAUTHENTICATED'});var s=get_('Sessions',sha_(token));if(!s||s.expires<Date.now())throw Object.assign(new Error('Phiên hết hạn. Đăng xuất và đăng nhập lại.'),{code:'UNAUTHENTICATED'});var a=get_('Accounts',s.accountId);if(!a||!a.active)throw Object.assign(new Error('Account không hoạt động.'),{code:'UNAUTHENTICATED'});return a;}
-function publicAccount_(a){return {id:a.id,username:a.username,ownerName:a.ownerName,role:a.role,active:a.active,deletedAt:a.deletedAt||null,revision:a.revision||0};}
+function publicAccount_(a){return {id:a.id,username:a.username,ownerName:a.ownerName,role:a.role,active:a.active,deletedAt:a.deletedAt||null,revision:a.revision||0,priority:Number.isFinite(a.priority)?a.priority:null};}
 function owner_(requested,user){if(user.role==='admin'){if(!requested)throw applicationError_('Chọn account.');return requested;}if(requested&&requested!==user.id)throw applicationError_('Không có quyền truy cập account khác.');return user.id;}
 function admin_(u){if(u.role!=='admin')throw applicationError_('Chỉ admin có quyền thực hiện.');}
 function checkProduct_(accountId,productId){var p=get_('Products',productId);if(!p||!p.active||!read_('Assignments').some(function(a){return a.accountId===accountId&&a.productId===productId&&a.active;}))throw applicationError_('Sản phẩm chưa được phân phối cho account hoặc đã ngừng dùng.');}
@@ -212,13 +227,13 @@ function customerKey_(name,date){return date+'|'+String(name||'').normalize('NFC
 function duplicateOrder_(){return Object.assign(new Error('Đã có đơn trùng tên khách và cùng ngày (trong hệ thống hoặc trong lô). Bạn có chắc chắn muốn lưu thêm?'),{code:'DUPLICATE_ORDER'});}
 function prepareOrder_(p,user){
     date_(p.date);var old=p.id?get_('Orders',p.id):null;
-    if(user.role==='admin'&&!old)throw applicationError_('Admin chỉ xem và sửa đơn đã có.');if(p.id&&!old)throw applicationError_('Đơn không còn tồn tại.');
+    if(p.id&&!old)throw applicationError_('Đơn không còn tồn tại.');
     if(old&&user.role!=='admin'&&old.accountId!==user.id&&old.saleAccountId!==user.id)throw applicationError_('Không có quyền sửa đơn.');
     if(old&&Number(p.revision||0)!==Number(old.revision||0))throw conflict_();
     var accountId=user.role==='sale'?String(p.accountId||''):owner_(p.accountId,user);
-    var mkt=get_('Accounts',accountId);if(!mkt||mkt.role!=='user'||!mkt.active)throw applicationError_('Chọn MKT đang hoạt động để nhận đơn.');
+    var mkt=get_('Accounts',accountId);if(!mkt||!['user','admin'].includes(mkt.role)||!mkt.active)throw applicationError_('Chọn MKT hoặc Admin đang hoạt động để nhận đơn.');
     if(user.role==='sale')checkProduct_(user.id,p.productId);
-    if(!(user.role==='admin'&&old&&old.accountId===accountId&&old.productId===p.productId))checkProduct_(accountId,p.productId);
+    if(mkt.role!=='admin'&&!(user.role==='admin'&&old&&old.accountId===accountId&&old.productId===p.productId))checkProduct_(accountId,p.productId);
     var saleAccountId=old?old.saleAccountId||null:user.role==='sale'?user.id:null;
     if(user.role!=='sale'&&Object.prototype.hasOwnProperty.call(p,'saleAccountId')){saleAccountId=p.saleAccountId||null;if(saleAccountId&&(!old||saleAccountId!==old.saleAccountId||accountId!==old.accountId||p.productId!==old.productId)){var sales=get_('Accounts',saleAccountId);if(!sales||sales.role!=='sale'||!sales.active)throw applicationError_('SALE phụ trách không hợp lệ.');checkProduct_(saleAccountId,p.productId);}}
     var customer=String(p.customerName||'').trim();if(!customer||customer.length>200)throw applicationError_('Tên khách chưa hợp lệ.');
@@ -255,7 +270,7 @@ function prepareProductAssignments_(payload,productId){
  });
 }
 
-var BUSINESS_TABLES_=['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','ReportRequests'];
+var BUSINESS_TABLES_=['Accounts','Products','Assignments','Reports','Orders','Appointments','Targets','ReportRequests','TargetRequests'];
 function rememberBefore_(table,id,value){
  if(!REQUEST_||!BUSINESS_TABLES_.includes(table))return;
  var records=REQUEST_.before[table]||(REQUEST_.before[table]=Object.create(null));
@@ -273,6 +288,7 @@ function notifyChanges_(actor,action,p){
    if(table==='Appointments'){label='đơn hẹn của '+record.customerName;target={page:'appointments',focus:id,date:record.date};}
    if(table==='Orders'){label='đơn hàng '+record.customerName;target={page:'orders',focus:id,date:record.date};}
    if(table==='ReportRequests'){label='yêu cầu '+(record.kind==='fill'?'điền':'sửa')+' báo cáo ngày '+record.date+(record.reason?' — '+record.reason:'');target={page:'daily',report:{accountId:record.accountId,date:record.date}};}
+   if(table==='TargetRequests'){label='yêu cầu gửi mục tiêu tháng '+record.month+(record.reason?' — '+record.reason:'');target={page:'targets',accountId:record.accountId,month:record.month};}
    if(table==='Reports'){label='báo cáo ngày '+record.date;target={page:'daily',report:{id:id,accountId:record.accountId,date:record.date}};}
    if(table==='Targets'){label='mục tiêu tháng '+record.month;target={page:'targets',focus:id,accountId:record.accountId,month:record.month};}
    if(table==='Accounts'){label='tài khoản '+record.ownerName;target={page:actor.role==='admin'?'accounts':'overview',focus:id};}
@@ -357,6 +373,15 @@ function ackNotifications_(user,p){
   if(action==='cancelReportRequest'){
    admin_(user);const r=get_('ReportRequests',p.id);if(!r)throw applicationError_('Không tìm thấy yêu cầu.');if(r.revision!==Number(p.revision))throw conflict_();r.status='cancelled';r.revision++;r.updatedAt=now_();put_('ReportRequests',r);return true;
   }
+  if(action==='requestTarget'){
+   admin_(user);const a=get_('Accounts',p.accountId);
+   if(!a||!a.active||!employeeRole_(a.role)||!/^\d{4}-(0[1-9]|1[0-2])$/.test(p.month)||typeof p.reason!=='string'||p.reason.length>1000)throw applicationError_('Yêu cầu gửi mục tiêu không hợp lệ.');
+   const old=read_('TargetRequests').find(r=>r.accountId===a.id&&r.month===p.month&&r.status==='pending');
+   put_('TargetRequests',{id:old?.id||newId_(),accountId:a.id,month:p.month,reason:p.reason,status:'pending',requestedBy:user.id,createdAt:old?.createdAt||now_(),updatedAt:now_(),revision:(old?.revision||0)+1});return true;
+  }
+  if(action==='cancelTargetRequest'){
+   admin_(user);const r=get_('TargetRequests',p.id);if(!r)throw applicationError_('Không tìm thấy yêu cầu.');if(r.revision!==Number(p.revision))throw conflict_();r.status='cancelled';r.revision++;r.updatedAt=now_();put_('TargetRequests',r);return true;
+  }
   return false;
  }
  function execute(req){
@@ -391,7 +416,7 @@ function ackNotifications_(user,p){
   if(receipt){if(receipt.details.fingerprint!==fingerprint)throw applicationError_('Mã yêu cầu đã dùng với dữ liệu khác.');return delta_(user,receipt.details.changes,receipt.details.removed);}
   if(['saveOrder','deleteOrder'].includes(action)&&p.id){const old=get_('Orders',p.id);if(old&&Number(p.revision)!==Number(old.revision||0))throw conflict_();}
   REQUEST_.idSeed=user.id+'|'+req.requestId+'|'+action;REQUEST_.idCounter=0;
-  mutate_(action,p,user);notifyChanges_(user,action,p);audit_(user.id,action,{id:p.id||null,date:p.date||null,accountId:p.accountId||null});
+  mutate_(action,p,user,sha_(req.token));notifyChanges_(user,action,p);audit_(user.id,action,{id:p.id||null,date:p.date||null,accountId:p.accountId||null});
   const changes=structuredClone(REQUEST_.changes),removed=structuredClone(REQUEST_.removed);
   audit_(user.id,'requestCompleted',{requestId:req.requestId,fingerprint,changes,removed});
   return delta_(get_('Accounts',user.id),changes,removed);

@@ -18,5 +18,5 @@ test('Calendar marks missing and draft days but removes the red mark once submit
  const now=new Date('2026-11-05T01:00:00Z');
  const rows=[{accountId:'u',date:'2026-11-02',status:'submitted'},{accountId:'u',date:'2026-11-03',status:'draft'}];
  assert.deepEqual(missingReportDates(rows,'u',now),['2026-11-03','2026-11-04']);
- rows[1].status='submitted';assert.deepEqual(missingReportDates(rows,'u',now),['2026-11-04']);assert.equal(missingReportDates([],'new',now).length,7);
+ rows[1].status='submitted';assert.deepEqual(missingReportDates(rows,'u',now),['2026-11-04']);assert.equal(missingReportDates([],'new',now).length,5);assert.deepEqual(missingReportDates([],'new',now,7).length,7);
 });

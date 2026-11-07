@@ -1,7 +1,7 @@
 import {appointmentTotal} from './appointments.js';
-import {inRange,orderWeight,divide,isCareOrder} from './domain.js';
+import {inRange,orderWeight,divide,isCareOrder,periodRange,aggregate} from './domain.js';
 export const isEmployee=a=>a?.role==='user'||a?.role==='sale';
-export const accountLabel=a=>a?(a.role==='admin'?'Admin':a.role==='sale'?'SALE':'MKT')+' - '+(a.ownerName||a.username):'Account đã xóa';
+export const accountLabel=a=>a?(a.role==='admin'?'Admin':a.role==='sale'?'S':'M')+' - '+(a.ownerName||a.username):'Account đã xóa';
 export const assignedMkts=(db,productId)=>db.accounts.filter(a=>a.role==='user'&&a.active&&!a.deletedAt&&db.assignments.some(x=>x.active&&x.accountId===a.id&&x.productId===productId));
 export const assignedSales=(db,productId)=>db.accounts.filter(a=>a.role==='sale'&&a.active&&!a.deletedAt&&db.assignments.some(x=>x.active&&x.accountId===a.id&&x.productId===productId));
 export function saleOrderDb(db){return {...db,orders:db.orders.filter(o=>o.saleAccountId).map(o=>({...o,accountId:o.saleAccountId,type:'sale',isCare:false}))};}
@@ -21,4 +21,21 @@ export function saleSummary(db,range,account='all',product='all'){
  });
  const total=rows.reduce((a,r)=>{for(const k of ['data','tt','ktt','orders','revenue','appointments','saleCount','upsaleCount','careCount'])a[k]+=r[k];return a;},{data:0,tt:0,ktt:0,orders:0,revenue:0,appointments:0,saleCount:0,upsaleCount:0,careCount:0});total.conversion=divide(total.orders,total.data);
  return {rows,total,reports,orders:orders.filter(o=>product==='all'||o.productId===product)};
+}
+
+// Month figures for a SALE account (or all SALE accounts when account is
+// 'all'): total revenue per product and total target per product, for the
+// selected month. "Đạt mục tiêu" divides the first by the second.
+export function monthSaleFigures(db,account,month){
+ const stats=aggregate(saleOrderDb(db),periodRange('month','','','',month),account);
+ const revenueByProduct=new Map(),goalByProduct=new Map();
+ for(const r of stats.detail)revenueByProduct.set(r.productId,(revenueByProduct.get(r.productId)||0)+Number(r.revenue||0)+Number(r.care||0));
+ const saleIds=new Set(db.accounts.filter(a=>a.role==='sale').map(a=>a.id));
+ for(const t of db.targets||[]){
+  if(t.month!==month)continue;
+  if(account!=='all'&&t.accountId!==account)continue;
+  if(account==='all'&&!saleIds.has(t.accountId))continue;
+  goalByProduct.set(t.productId,(goalByProduct.get(t.productId)||0)+Number(t.revenue||0)+Number(t.care||0));
+ }
+ return {revenueByProduct,goalByProduct};
 }
