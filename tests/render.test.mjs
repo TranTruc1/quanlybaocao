@@ -169,7 +169,7 @@ test('modal max-height fits its backdrop and leaves the charts modal at 92dvh',a
  assert.ok(css.includes('max-height:calc(100dvh - 40px);overflow:auto;box-shadow:0 30px 100px #0c281f40;padding:24px}'));
  assert.equal(css.includes('max-height:calc(100dvh - 32px)'),false);
  assert.ok(css.includes('.charts-modal{width:min(1280px,96vw);max-width:96vw;max-height:92dvh;overflow:auto}'));
- assert.ok(css.includes('thead th:has(.col-hide){text-align:center}'));
+ assert.ok(css.includes('thead th:has(.col-hide){text-align:center;white-space:nowrap}'));
 });
 
 test('Targets page shows a red missing-target badge for an account with no targets',()=>{

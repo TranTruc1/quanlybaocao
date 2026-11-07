@@ -112,7 +112,7 @@ table th,table td{font-size:14px}table thead th,.targets-table thead th{font-siz
 .hidden-products>span{font-weight:600}
 .hidden-products .care-check{font-size:12px;min-height:24px}
 
-thead th:has(.col-hide){text-align:center}.col-hide{display:block;margin:8px auto 0;padding:1px 9px;border:1px solid rgba(255,255,255,.55);border-radius:999px;background:transparent;color:#fff;font-size:10px;line-height:16px;cursor:pointer}
+thead th:has(.col-hide){text-align:center;white-space:nowrap}.col-hide{display:inline-block;margin:0 0 0 8px;padding:1px 9px;border:1px solid rgba(255,255,255,.55);border-radius:999px;background:transparent;color:#fff;font-size:10px;line-height:16px;cursor:pointer;vertical-align:middle}
 .col-hide:hover{background:rgba(255,255,255,.18)}
 .employee-tab{position:relative}
 .employee-tab .calendar-missing-dot{position:absolute;top:6px;right:10px;width:8px;height:8px;min-width:8px}
